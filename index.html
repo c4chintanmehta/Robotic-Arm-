@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Vector-Based Robust Gesture & MQTT Robot Controller</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Dual-Mode Remote MQTT Robotic Arm Dashboard</title>
+  
   <!-- MediaPipe Hand Tracking -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -29,76 +31,120 @@
       --text-muted: #94a3b8;
     }
 
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
     body {
-      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       background-color: var(--bg);
       color: var(--text);
       margin: 0;
-      padding: 12px;
+      padding: 10px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      box-sizing: border-box;
       user-select: none;
+      min-height: 100vh;
     }
 
     .top-header {
       width: 100%;
       max-width: 1760px;
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
+      gap: 10px;
       margin-bottom: 12px;
-      padding: 10px 18px;
+      padding: 10px 16px;
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 8px;
-      box-sizing: border-box;
     }
 
-    .top-header h2 { margin: 0; color: var(--accent); font-size: 20px; display: flex; align-items: center; gap: 10px; }
-    .status-node { font-size: 13px; font-family: monospace; background: #0c2840; color: var(--accent); padding: 5px 12px; border-radius: 4px; border: 1px solid #1f4e78; }
+    .top-header h2 { 
+      margin: 0; 
+      color: var(--accent); 
+      font-size: 17px; 
+      display: flex; 
+      align-items: center; 
+      gap: 8px; 
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* Mode Switcher Buttons */
+    .mode-switch-group {
+      display: flex;
+      background: #0b0f17;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px;
+    }
+
+    .btn-mode {
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: bold;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+    }
+    .btn-mode.active {
+      background: #212d40;
+      color: var(--accent);
+      box-shadow: 0 0 8px rgba(0,0,0,0.5);
+    }
+
+    .status-node { 
+      font-size: 11px; 
+      font-family: monospace; 
+      background: #0c2840; 
+      color: var(--accent); 
+      padding: 4px 8px; 
+      border-radius: 4px; 
+      border: 1px solid #1f4e78; 
+    }
 
     .btn {
-      padding: 7px 14px;
+      padding: 6px 12px;
       border-radius: 4px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: bold;
       cursor: pointer;
       border: 1px solid var(--border);
       background: #212d40;
       color: #fff;
-      transition: all 0.2s;
+      touch-action: manipulation;
     }
-    .btn:hover { background: #2d3c54; }
+    .btn:active { background: #2d3c54; transform: scale(0.97); }
     .btn-sync { background: var(--green); border-color: var(--green); color: #000; }
-
-    .main-grid {
-      display: grid;
-      grid-template-columns: 380px 1fr 520px;
-      gap: 14px;
-      width: 100%;
-      max-width: 1760px;
-      height: 790px;
-    }
 
     .card {
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 14px;
+      padding: 12px;
       display: flex;
       flex-direction: column;
-      box-sizing: border-box;
       position: relative;
-      overflow: hidden;
     }
 
     .card-title {
-      font-size: 13px;
+      font-size: 12px;
       font-weight: bold;
       color: var(--text-muted);
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       display: flex;
@@ -109,16 +155,17 @@
     .video-container {
       position: relative;
       width: 100%;
-      height: 230px;
       border-radius: 6px;
       overflow: hidden;
       background: #000;
       border: 1px solid var(--border);
     }
+
     video, #output_canvas {
       position: absolute;
       width: 100%;
       height: 100%;
+      object-fit: cover;
       transform: scaleX(-1);
     }
 
@@ -126,27 +173,29 @@
       background: var(--panel-bg);
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 10px 12px;
-      margin-top: 10px;
+      padding: 8px 10px;
+      margin-top: 8px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
       font-family: monospace;
-      font-size: 12px;
+      font-size: 11px;
     }
+
     .console-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 3px 0;
+      padding: 2px 0;
       border-bottom: 1px solid #2d3748;
     }
     .console-row:last-child { border-bottom: none; }
+
     .console-badge {
       padding: 2px 6px;
       border-radius: 4px;
       font-weight: bold;
-      font-size: 11px;
+      font-size: 10px;
     }
     .badge-active { background: #0c2840; color: var(--accent); border: 1px solid #1f4e78; }
     .badge-locked { background: #3d2805; color: var(--yellow); border: 1px solid #855302; }
@@ -154,52 +203,32 @@
 
     #canvas3d-container {
       width: 100%;
-      height: 100%;
       border-radius: 6px;
       overflow: hidden;
       background: #07090e;
       position: relative;
-      cursor: grab;
+      touch-action: none;
     }
-    #canvas3d-container:active { cursor: grabbing; }
 
     .tf-overlay {
       position: absolute;
-      top: 12px;
-      left: 12px;
-      background: rgba(21, 27, 38, 0.94);
+      top: 8px;
+      left: 8px;
+      background: rgba(21, 27, 38, 0.92);
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 10px 14px;
+      padding: 6px 10px;
       font-family: monospace;
-      font-size: 12px;
-      line-height: 1.6;
+      font-size: 10px;
+      line-height: 1.5;
       pointer-events: none;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     }
     .tf-val { color: var(--accent); font-weight: bold; }
-
-    .view-hint {
-      position: absolute;
-      bottom: 10px;
-      right: 12px;
-      background: rgba(11, 15, 23, 0.85);
-      border: 1px solid var(--border);
-      color: var(--text-muted);
-      font-size: 11px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      pointer-events: none;
-      font-family: monospace;
-    }
 
     .directional-container {
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      flex: 1;
-      overflow-y: auto;
-      padding-right: 4px;
+      gap: 10px;
     }
 
     .joint-section {
@@ -212,11 +241,11 @@
     .joint-section.active {
       border-color: var(--accent);
       background: #14233a;
-      box-shadow: 0 0 12px var(--accent-glow);
+      box-shadow: 0 0 10px var(--accent-glow);
     }
 
     .section-title {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: bold;
       color: var(--text-muted);
       margin-bottom: 6px;
@@ -225,112 +254,73 @@
       align-items: center;
     }
 
-    .vertical-pitch-grid {
+    .pitch-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 10px;
+      gap: 8px;
     }
 
-    .pitch-card {
+    .pitch-item {
       background: #121722;
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 8px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      transition: border-color 0.2s;
+      padding: 8px 10px;
     }
-    .pitch-card.active {
+    .pitch-item.active {
       border-color: var(--accent);
       background: #152238;
-      box-shadow: 0 0 10px var(--accent-glow);
     }
 
-    .slider-v-wrapper {
-      height: 140px;
-      width: 40px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      position: relative;
-    }
-
-    input[type=range].vertical-slider {
-      -webkit-appearance: none;
-      width: 130px;
-      height: 6px;
-      background: #2d3748;
-      border-radius: 3px;
-      transform: rotate(-90deg);
-      outline: none;
-    }
-
-    input[type=range].horizontal-slider {
+    input[type=range] {
       -webkit-appearance: none;
       width: 100%;
-      height: 6px;
+      height: 24px;
+      background: transparent;
+      margin: 4px 0;
+      touch-action: manipulation;
+    }
+
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 8px;
       background: #2d3748;
-      border-radius: 3px;
-      outline: none;
+      border-radius: 4px;
     }
 
     input[type=range]::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
       background: var(--accent);
       cursor: pointer;
+      margin-top: -7px;
       box-shadow: 0 0 8px var(--accent);
     }
+
     .joint-section.active input[type=range]::-webkit-slider-thumb,
-    .pitch-card.active input[type=range]::-webkit-slider-thumb {
+    .pitch-item.active input[type=range]::-webkit-slider-thumb {
       background: var(--green);
       box-shadow: 0 0 8px var(--green);
-      transform: scale(1.15);
-    }
-
-    .rot-indicator-box {
-      width: 46px;
-      height: 46px;
-      border-radius: 50%;
-      border: 2px dashed #38bdf8;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      position: relative;
-      background: #0b0f17;
-    }
-    .rot-pointer {
-      width: 2px;
-      height: 20px;
-      background: var(--orange);
-      position: absolute;
-      top: 3px;
-      transform-origin: bottom center;
-      transition: transform 0.05s linear;
+      transform: scale(1.1);
     }
 
     .claw-sim-box {
       width: 100%;
-      height: 28px;
+      height: 24px;
       background: #0b0f17;
       border: 1px solid var(--border);
       border-radius: 4px;
       position: relative;
-      overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
     .claw-finger-l, .claw-finger-r {
-      width: 18px;
-      height: 18px;
+      width: 14px;
+      height: 14px;
       background: var(--orange);
-      border-radius: 3px;
+      border-radius: 2px;
       position: absolute;
       transition: transform 0.05s linear;
     }
@@ -340,40 +330,80 @@
     .ros-footer {
       width: 100%;
       max-width: 1760px;
-      margin-top: 12px;
+      margin-top: 10px;
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 8px 16px;
+      padding: 6px 12px;
       font-family: monospace;
-      font-size: 12px;
+      font-size: 10px;
       display: flex;
       justify-content: space-between;
-      box-sizing: border-box;
+      color: var(--text-muted);
     }
+
+    /* ======================================================== */
+    /* VIEW MODE LAYOUT DEFINITIONS (MOBILE VS DESKTOP)          */
+    /* ======================================================== */
+
+    /* MODE: MOBILE VIEW */
+    body.mode-mobile .main-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+      max-width: 600px;
+    }
+    body.mode-mobile .video-container { height: 190px; }
+    body.mode-mobile #canvas3d-container { height: 230px; }
+    body.mode-mobile .pitch-grid { grid-template-columns: 1fr; }
+
+    /* MODE: DESKTOP VIEW */
+    body.mode-desktop .main-grid {
+      display: grid;
+      grid-template-columns: 380px 1fr 480px;
+      gap: 14px;
+      width: 100%;
+      max-width: 1760px;
+      height: 780px;
+    }
+    body.mode-desktop .card { height: 100%; overflow: hidden; }
+    body.mode-desktop .video-container { height: 240px; }
+    body.mode-desktop #canvas3d-container { height: 100%; }
+    body.mode-desktop .directional-container { flex: 1; overflow-y: auto; }
+    body.mode-desktop .pitch-grid { grid-template-columns: 1fr 1fr 1fr; }
   </style>
 </head>
-<body>
+<body class="mode-desktop">
 
   <div class="top-header">
-    <h2><span>&#x1F916;</span> Remote Cloud MQTT Robot Controller</h2>
-    <div style="display: flex; gap: 10px; align-items: center;">
+    <h2><span>&#x1F916;</span> Robotic Arm Dual-Mode MQTT Controller</h2>
+    
+    <div class="header-controls">
+      <!-- 2-Option Viewport Switcher -->
+      <div class="mode-switch-group">
+        <button id="btnMobile" class="btn-mode" onclick="setViewMode('mobile')">📱 Mobile</button>
+        <button id="btnDesktop" class="btn-mode active" onclick="setViewMode('desktop')">🖥️ Desktop</button>
+      </div>
+
       <span class="status-node" id="commBadge">MQTT: CONNECTING...</span>
-      <button class="btn btn-sync" onclick="initMQTT()">Reconnect Cloud</button>
-      <button class="btn" onclick="resetToHome()">Reset Home</button>
+      <button class="btn btn-sync" onclick="initMQTT()">Reconnect</button>
+      <button class="btn" onclick="resetToHome()">Home</button>
     </div>
   </div>
 
-  <div class="main-grid">
-    <!-- Camera + Gesture Tracker -->
-    <div class="card">
+  <div class="main-grid" id="mainGridContainer">
+    
+    <!-- 1. Vision & Gesture Tracker -->
+    <div class="card" id="cardVision">
       <div class="card-title">
         <span>Vision Topic: /camera/hand_tracker</span>
-        <span id="aiState" style="color: var(--green);">Tracking Active</span>
+        <span id="aiState" style="color: var(--green);">Tracking</span>
       </div>
+      
       <div class="video-container">
         <video id="webcam" playsinline></video>
-        <canvas id="output_canvas" width="350" height="230"></canvas>
+        <canvas id="output_canvas"></canvas>
       </div>
 
       <div class="gesture-console">
@@ -382,152 +412,119 @@
           <span id="consoleLeft" class="console-badge badge-active">None</span>
         </div>
         <div class="console-row">
-          <span>FINGER VECTOR STATE</span>
-          <span id="consoleFingers" class="console-badge badge-active">[T, I, M, R, P]</span>
+          <span>FINGER VECTOR</span>
+          <span id="consoleFingers" class="console-badge badge-active">[I:0, M:0, R:0, P:0]</span>
         </div>
         <div class="console-row">
           <span>GESTURE AXIS</span>
           <span id="consoleAxis" class="console-badge badge-active">--</span>
         </div>
         <div class="console-row">
-          <span>RIGHT HAND COORD</span>
-          <span id="consoleRight" class="console-badge badge-active">X: -- | Y: --</span>
-        </div>
-        <div class="console-row">
           <span>MOTION STREAM</span>
           <span id="consoleEngage" class="console-badge badge-locked">Disengaged</span>
         </div>
         <div class="console-row">
-          <span>COMMAND ANGLE</span>
-          <strong id="consoleAngle" style="color: var(--accent);">--&deg;</strong>
+          <span>TARGET ANGLE</span>
+          <strong id="consoleAngle" style="color: var(--accent); font-size: 13px;">--&deg;</strong>
         </div>
       </div>
     </div>
 
-    <!-- 3D Digital Twin Visualizer -->
-    <div class="card">
+    <!-- 2. 3D Digital Twin Visualizer -->
+    <div class="card" id="card3D">
       <div class="card-title">
-        <span>3D Kinematic Digital Twin</span>
-        <span>RViz2 Kinematic Mesh</span>
+        <span>3D Kinematic Mesh</span>
+        <span id="viewHintText">Orbit / Drag View</span>
       </div>
       <div id="canvas3d-container">
         <div class="tf-overlay">
-          <div style="color: #fff; margin-bottom: 4px; border-bottom: 1px solid var(--border); padding-bottom: 2px;"><strong>Forward Kinematics (FK)</strong></div>
-          <div>End-Effector (X, Y, Z): <span id="tfXYZ" class="tf-val">0, 0, 0</span> mm</div>
-          <div>Active Axis: <span id="tfActiveJoint" class="tf-val" style="color: var(--green);">None</span></div>
+          <div>End-Effector: <span id="tfXYZ" class="tf-val">0, 0, 0</span> mm</div>
+          <div>Active Joint: <span id="tfActiveJoint" class="tf-val" style="color: var(--green);">None</span></div>
           <div>Network Link: <span class="tf-val">MQTT WSS (EMQX Cloud)</span></div>
         </div>
-        <div class="view-hint">&#x1F50D; Left-Click + Drag to Rotate | Scroll to Zoom</div>
       </div>
     </div>
 
-    <!-- Directionally Aligned Kinematic Slicer Panel -->
-    <div class="card">
+    <!-- 3. Directional Joint Slicers -->
+    <div class="card" id="cardSliders">
       <div class="card-title">
-        <span>Kinematic Direction Slicers</span>
+        <span>Kinematic Sliders</span>
         <span id="activeBadge" style="color: var(--accent);">Wait Gesture</span>
       </div>
-      
-      <div class="directional-container">
 
-        <!-- 1. BASE YAW (Open Palm 5-Finger Gesture) -->
+      <div class="directional-container">
+        <!-- Base Yaw -->
         <div id="g0" class="joint-section">
           <div class="section-title">
-            <span>&#x21C4; Joint 0: Base Yaw (Pin 0) &mdash; 🖐️ Open Palm + Hand Left/Right</span>
+            <span>&#x21C4; J0: Base Yaw (Pin 0) &mdash; 🖐️ Open Palm</span>
             <span id="v0" style="color: var(--accent); font-family: monospace;">90&deg;</span>
           </div>
-          <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">
-            <span>Left ($0^\circ$)</span>
-            <span>Center ($90^\circ$)</span>
-            <span>Right ($180^\circ$)</span>
-          </div>
-          <input type="range" min="0" max="180" value="90" class="horizontal-slider" id="s0" oninput="manualSlider(0, this.value)">
+          <input type="range" min="0" max="180" value="90" id="s0" oninput="manualSlider(0, this.value)">
         </div>
 
-        <!-- 2. SAGITTAL ELEVATION & REACH (Vertical Sliders) -->
+        <!-- Sagittal Pitch Joints -->
         <div class="joint-section">
           <div class="section-title">
-            <span>&#x21C5; Sagittal Elevation (Pitch Axes) &mdash; Hand Moves Up/Down</span>
+            <span>&#x21C5; Sagittal Elevation (Pitch Axes) &mdash; Vertical Gesture</span>
           </div>
           
-          <div class="vertical-pitch-grid">
-            
-            <!-- Shoulder Pitch (Pin 1) -->
-            <div id="g1" class="pitch-card">
-              <span style="font-size: 11px; font-weight: bold;">J1: Shoulder (Pin 1)</span>
-              <span id="v1" style="color: var(--accent); font-family: monospace; font-size: 12px;">75&deg;</span>
-              <div class="slider-v-wrapper">
-                <input type="range" min="25" max="125" value="75" class="vertical-slider" id="s1" oninput="manualSlider(1, this.value)">
+          <div class="pitch-grid">
+            <div id="g1" class="pitch-item">
+              <div class="section-title">
+                <span>J1: Shoulder (Pin 1) &mdash; ☝️ 1 Finger</span>
+                <span id="v1" style="color: var(--accent); font-family: monospace;">75&deg;</span>
               </div>
-              <span style="font-size: 9px; color: var(--text-muted);">&#x2191; Up / &#x2193; Down</span>
+              <input type="range" min="25" max="125" value="75" id="s1" oninput="manualSlider(1, this.value)">
             </div>
 
-            <!-- Elbow Pitch (Pin 2) -->
-            <div id="g2" class="pitch-card">
-              <span style="font-size: 11px; font-weight: bold;">J2: Elbow (Pin 2)</span>
-              <span id="v2" style="color: var(--accent); font-family: monospace; font-size: 12px;">140&deg;</span>
-              <div class="slider-v-wrapper">
-                <input type="range" min="30" max="170" value="140" class="vertical-slider" id="s2" oninput="manualSlider(2, this.value)">
+            <div id="g2" class="pitch-item">
+              <div class="section-title">
+                <span>J2: Elbow (Pin 2) &mdash; ✌️ 2 Fingers</span>
+                <span id="v2" style="color: var(--accent); font-family: monospace;">140&deg;</span>
               </div>
-              <span style="font-size: 9px; color: var(--text-muted);">&#x2191; Up / &#x2193; Down</span>
+              <input type="range" min="30" max="170" value="140" id="s2" oninput="manualSlider(2, this.value)">
             </div>
 
-            <!-- Wrist Pitch (Pin 3) -->
-            <div id="g3" class="pitch-card">
-              <span style="font-size: 11px; font-weight: bold;">J3: Wrist.P (Pin 3)</span>
-              <span id="v3" style="color: var(--accent); font-family: monospace; font-size: 12px;">135&deg;</span>
-              <div class="slider-v-wrapper">
-                <input type="range" min="15" max="165" value="135" class="vertical-slider" id="s3" oninput="manualSlider(3, this.value)">
+            <div id="g3" class="pitch-item">
+              <div class="section-title">
+                <span>J3: Wrist.P (Pin 3) &mdash; 🤟 3 Fingers</span>
+                <span id="v3" style="color: var(--accent); font-family: monospace;">135&deg;</span>
               </div>
-              <span style="font-size: 9px; color: var(--text-muted);">&#x2191; Up / &#x2193; Down</span>
+              <input type="range" min="15" max="165" value="135" id="s3" oninput="manualSlider(3, this.value)">
             </div>
-
           </div>
         </div>
 
-        <!-- 3. WRIST ROLL (Thumb Only Gesture) -->
+        <!-- Wrist Roll -->
         <div id="g4" class="joint-section">
           <div class="section-title">
-            <span>&#x21BB; Joint 4: Wrist Roll (Pin 8) &mdash; 👍 Thumb Only + Hand Left/Right</span>
+            <span>&#x21BB; J4: Wrist Roll (Pin 8) &mdash; 🤙 Pinky ONLY</span>
             <span id="v4" style="color: var(--accent); font-family: monospace;">90&deg;</span>
           </div>
-          <div style="display: flex; align-items: center; gap: 14px;">
-            <div class="rot-indicator-box">
-              <div id="rollPointer" class="rot-pointer" style="transform: rotate(0deg);"></div>
-            </div>
-            <div style="flex: 1;">
-              <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">
-                <span>CCW ($0^\circ$)</span>
-                <span>Neutral ($90^\circ$)</span>
-                <span>CW ($180^\circ$)</span>
-              </div>
-              <input type="range" min="0" max="180" class="horizontal-slider" id="s4" oninput="manualSlider(4, this.value)">
-            </div>
-          </div>
+          <input type="range" min="0" max="180" value="90" id="s4" oninput="manualSlider(4, this.value)">
         </div>
 
-        <!-- 4. CLAW / GRIPPER (Closed Fist Gesture) -->
+        <!-- Claw Gripper -->
         <div id="g5" class="joint-section">
           <div class="section-title">
-            <span>&#x2964; Joint 5: Claw Gripper (Pin 9) &mdash; ✊ Closed Fist + Hand Left/Right</span>
+            <span>&#x2964; J5: Claw Gripper (Pin 9) &mdash; ✊ Closed Fist</span>
             <span id="v5" style="color: var(--accent); font-family: monospace;">30&deg;</span>
           </div>
           <div class="claw-sim-box">
             <div id="clawFingerL" class="claw-finger-l"></div>
-            <div style="font-size: 10px; color: var(--text-muted); font-family: monospace; z-index: 2;">PINCH APERTURE</div>
+            <div style="font-size: 9px; color: var(--text-muted); font-family: monospace; z-index: 2;">PINCH APERTURE</div>
             <div id="clawFingerR" class="claw-finger-r"></div>
           </div>
-          <input type="range" min="0" max="100" value="30" class="horizontal-slider" id="s5" oninput="manualSlider(5, this.value)">
+          <input type="range" min="0" max="100" value="30" id="s5" oninput="manualSlider(5, this.value)">
         </div>
-
       </div>
     </div>
+
   </div>
 
   <div class="ros-footer">
     <span>MQTT TOPIC: robotarm/mehta/cmd</span>
-    <span id="rosMsg">Cloud Broker: broker.emqx.io (Port 8084 WSS)</span>
-    <span>ALGORITHM: Euclidean Radial Distance Vectorization</span>
+    <span>Dual-Mode Switcher Active</span>
   </div>
 
   <script>
@@ -538,7 +535,7 @@
       1: { min: 25, max: 125, isVertical: true },  // Shoulder: 1 Finger (Vertical Y)
       2: { min: 30, max: 170, isVertical: true },  // Elbow: 2 Fingers (Vertical Y)
       3: { min: 15, max: 165, isVertical: true },  // Wrist Pitch: 3 Fingers (Vertical Y)
-      4: { min: 0, max: 180, isVertical: false },  // Wrist Roll: Thumb Only (Horizontal X)
+      4: { min: 0, max: 180, isVertical: false },  // Wrist Roll: Pinky Only (Horizontal X)
       5: { min: 0, max: 100, isVertical: false }   // Claw: Closed Fist (Horizontal X)
     };
 
@@ -557,7 +554,6 @@
     let activeJoint = -1;
     let jointEngaged = false;
 
-    // 4-Frame Debounce State
     let candidateJoint = -1;
     let candidateCount = 0;
 
@@ -565,9 +561,29 @@
     let basePedestal, shoulderGroup, upperArm, elbowGroup, forearm, wristPitchGroup, wristRollGroup, gripperBase;
     let leftClawFinger, rightClawFinger;
 
+    // --- VIEW MODE CONTROLLER (MOBILE VS DESKTOP) ---
+    function setViewMode(mode) {
+      document.body.classList.remove('mode-mobile', 'mode-desktop');
+      document.getElementById('btnMobile').classList.remove('active');
+      document.getElementById('btnDesktop').classList.remove('active');
+
+      if (mode === 'mobile') {
+        document.body.classList.add('mode-mobile');
+        document.getElementById('btnMobile').classList.add('active');
+      } else {
+        document.body.classList.add('mode-desktop');
+        document.getElementById('btnDesktop').classList.add('active');
+      }
+
+      // Trigger 3D and Video canvas resize
+      setTimeout(() => {
+        onWindowResize();
+      }, 50);
+    }
+
     function initMQTT() {
       const clientId = "WebClient-" + Math.random().toString(16).substring(2, 8);
-      document.getElementById('commBadge').innerText = "MQTT: CONNECTING...";
+      document.getElementById('commBadge').innerText = "CONNECTING...";
       document.getElementById('commBadge').style.color = "var(--yellow)";
 
       mqttClient = mqtt.connect(MQTT_BROKER, {
@@ -578,12 +594,11 @@
       });
 
       mqttClient.on('connect', () => {
-        document.getElementById('commBadge').innerText = "MQTT: CLOUD LIVE";
+        document.getElementById('commBadge').innerText = "MQTT: LIVE";
         document.getElementById('commBadge').style.color = "var(--green)";
-        document.getElementById('rosMsg').innerText = "Connected to EMQX Global Cloud Broker";
       });
 
-      mqttClient.on('error', (err) => {
+      mqttClient.on('error', () => {
         document.getElementById('commBadge').innerText = "MQTT: ERROR";
         document.getElementById('commBadge').style.color = "var(--red)";
       });
@@ -602,14 +617,8 @@
 
     function updateDirectionalVisualizers(ch, val) {
       document.getElementById('v' + ch).innerHTML = Math.round(val) + '&deg;';
-      
-      if (ch === 4) {
-        const rollDeg = val - 90;
-        document.getElementById('rollPointer').style.transform = `rotate(${rollDeg}deg)`;
-      }
-
       if (ch === 5) {
-        const offset = (val / 100.0) * 35;
+        const offset = (val / 100.0) * 28;
         document.getElementById('clawFingerL').style.transform = `translateX(${-offset}px)`;
         document.getElementById('clawFingerR').style.transform = `translateX(${offset}px)`;
       }
@@ -637,23 +646,23 @@
       scene = new THREE.Scene();
 
       camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 1, 3000);
-      camera.position.set(420, 320, 520);
+      camera.position.set(380, 280, 480);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(container.clientWidth, container.clientHeight);
-      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setClearColor(0x07090e, 1);
       container.appendChild(renderer.domElement);
 
       controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
-      controls.target.set(0, 140, 0);
+      controls.target.set(0, 130, 0);
 
-      const grid = new THREE.GridHelper(800, 32, 0x1f4e78, 0x151b26);
+      const grid = new THREE.GridHelper(600, 24, 0x1f4e78, 0x151b26);
       scene.add(grid);
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+      scene.add(new THREE.AmbientLight(0xffffff, 0.9));
       const light1 = new THREE.DirectionalLight(0x38bdf8, 1.2);
       light1.position.set(200, 400, 200);
       scene.add(light1);
@@ -663,23 +672,23 @@
       const matJoint  = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.2 });
       const matClaw   = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.3 });
 
-      basePedestal = new THREE.Mesh(new THREE.CylinderGeometry(60, 75, 25, 32), matBase);
-      basePedestal.position.y = 12.5;
+      basePedestal = new THREE.Mesh(new THREE.CylinderGeometry(55, 68, 22, 28), matBase);
+      basePedestal.position.y = 11;
       scene.add(basePedestal);
 
       shoulderGroup = new THREE.Group();
-      shoulderGroup.position.y = 25;
+      shoulderGroup.position.y = 22;
       basePedestal.add(shoulderGroup);
 
-      const turret = new THREE.Mesh(new THREE.CylinderGeometry(35, 35, 30, 24), matJoint);
-      turret.position.y = 15;
+      const turret = new THREE.Mesh(new THREE.CylinderGeometry(32, 32, 26, 20), matJoint);
+      turret.position.y = 13;
       shoulderGroup.add(turret);
 
       const shoulderPivot = new THREE.Group();
-      shoulderPivot.position.y = 30;
+      shoulderPivot.position.y = 26;
       shoulderGroup.add(shoulderPivot);
 
-      upperArm = new THREE.Mesh(new THREE.BoxGeometry(26, L1, 26), matArm);
+      upperArm = new THREE.Mesh(new THREE.BoxGeometry(24, L1, 24), matArm);
       upperArm.position.y = L1 / 2;
       shoulderPivot.add(upperArm);
 
@@ -687,11 +696,11 @@
       elbowGroup.position.y = L1 / 2;
       upperArm.add(elbowGroup);
 
-      const elbowJointMesh = new THREE.Mesh(new THREE.CylinderGeometry(18, 18, 30, 16), matJoint);
+      const elbowJointMesh = new THREE.Mesh(new THREE.CylinderGeometry(16, 16, 26, 16), matJoint);
       elbowJointMesh.rotation.z = Math.PI / 2;
       elbowGroup.add(elbowJointMesh);
 
-      forearm = new THREE.Mesh(new THREE.BoxGeometry(22, L2, 22), matArm);
+      forearm = new THREE.Mesh(new THREE.BoxGeometry(20, L2, 20), matArm);
       forearm.position.y = L2 / 2;
       elbowGroup.add(forearm);
 
@@ -699,27 +708,27 @@
       wristPitchGroup.position.y = L2 / 2;
       forearm.add(wristPitchGroup);
 
-      const wristPitchMesh = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 26, 16), matJoint);
+      const wristPitchMesh = new THREE.Mesh(new THREE.CylinderGeometry(14, 14, 24, 16), matJoint);
       wristPitchMesh.rotation.z = Math.PI / 2;
       wristPitchGroup.add(wristPitchMesh);
 
       wristRollGroup = new THREE.Group();
       wristPitchGroup.add(wristRollGroup);
 
-      const palmExtension = new THREE.Mesh(new THREE.BoxGeometry(18, L3, 18), matArm);
+      const palmExtension = new THREE.Mesh(new THREE.BoxGeometry(16, L3, 16), matArm);
       palmExtension.position.y = L3 / 2;
       wristRollGroup.add(palmExtension);
 
-      gripperBase = new THREE.Mesh(new THREE.BoxGeometry(36, 12, 24), matJoint);
+      gripperBase = new THREE.Mesh(new THREE.BoxGeometry(32, 10, 20), matJoint);
       gripperBase.position.y = L3;
       wristRollGroup.add(gripperBase);
 
-      leftClawFinger = new THREE.Mesh(new THREE.BoxGeometry(8, CLAW_LEN, 14), matClaw);
-      leftClawFinger.position.set(-12, CLAW_LEN / 2, 0);
+      leftClawFinger = new THREE.Mesh(new THREE.BoxGeometry(7, CLAW_LEN, 12), matClaw);
+      leftClawFinger.position.set(-10, CLAW_LEN / 2, 0);
       gripperBase.add(leftClawFinger);
 
-      rightClawFinger = new THREE.Mesh(new THREE.BoxGeometry(8, CLAW_LEN, 14), matClaw);
-      rightClawFinger.position.set(12, CLAW_LEN / 2, 0);
+      rightClawFinger = new THREE.Mesh(new THREE.BoxGeometry(7, CLAW_LEN, 12), matClaw);
+      rightClawFinger.position.set(10, CLAW_LEN / 2, 0);
       gripperBase.add(rightClawFinger);
 
       window.addEventListener('resize', onWindowResize);
@@ -728,6 +737,7 @@
 
     function onWindowResize() {
       const container = document.getElementById('canvas3d-container');
+      if (!container || !renderer || !camera) return;
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(container.clientWidth, container.clientHeight);
@@ -754,7 +764,7 @@
       wristRollGroup.rotation.y = q4;
 
       const clawOpening = Math.max(0, Math.min(100, displayAngles[5]));
-      const clawOffset = 5 + (clawOpening / 100.0) * 16;
+      const clawOffset = 4 + (clawOpening / 100.0) * 14;
       leftClawFinger.position.x = -clawOffset;
       rightClawFinger.position.x = clawOffset;
 
@@ -777,72 +787,47 @@
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
 
-    // Euclidean distance helper
     function getDist(p1, p2) {
       const dx = p1.x - p2.x;
       const dy = p1.y - p2.y;
       return Math.sqrt(dx * dx + dy * dy);
     }
 
-    // Mathematical Euclidean Vector Classifier
+    // 4-Finger Vector Landmark Classifier
     function analyzeLeftHandVector(landmarks) {
       const wrist = landmarks[0];
-      const palmScale = getDist(wrist, landmarks[9]); // Wrist to Middle MCP scale baseline
+      const palmHeight = getDist(wrist, landmarks[9]) || 0.1;
 
-      // Distance from Wrist to Fingertips normalized by palm scale
-      const dThumb  = getDist(landmarks[4], wrist) / palmScale;
-      const dIndex  = getDist(landmarks[8], wrist) / palmScale;
-      const dMiddle = getDist(landmarks[12], wrist) / palmScale;
-      const dRing   = getDist(landmarks[16], wrist) / palmScale;
-      const dPinky  = getDist(landmarks[20], wrist) / palmScale;
+      const isIndexExt  = (getDist(landmarks[8], wrist) / palmHeight) > 1.30 && (landmarks[8].y < landmarks[6].y);
+      const isMiddleExt = (getDist(landmarks[12], wrist) / palmHeight) > 1.30 && (landmarks[12].y < landmarks[10].y);
+      const isRingExt   = (getDist(landmarks[16], wrist) / palmHeight) > 1.30 && (landmarks[16].y < landmarks[14].y);
+      const isPinkyExt  = (getDist(landmarks[20], wrist) / palmHeight) > 1.15 && (landmarks[20].y < landmarks[18].y);
 
-      // Unambiguous Euclidean thresholds (Extended > 1.35, Curled < 1.05)
-      const isThumbExt  = dThumb > 1.15 && (landmarks[4].x > landmarks[3].x + 0.02);
-      const isIndexExt  = dIndex > 1.35 && (landmarks[8].y < landmarks[6].y);
-      const isMiddleExt = dMiddle > 1.35 && (landmarks[12].y < landmarks[10].y);
-      const isRingExt   = dRing > 1.35 && (landmarks[16].y < landmarks[14].y);
-      const isPinkyExt  = dPinky > 1.25 && (landmarks[20].y < landmarks[18].y);
+      document.getElementById('consoleFingers').innerText = 
+        `[I:${isIndexExt?1:0}, M:${isMiddleExt?1:0}, R:${isRingExt?1:0}, P:${isPinkyExt?1:0}]`;
 
-      // Diagnostic state string
-      const fStates = `[T:${isThumbExt?1:0} I:${isIndexExt?1:0} M:${isMiddleExt?1:0} R:${isRingExt?1:0} P:${isPinkyExt?1:0}]`;
-      document.getElementById('consoleFingers').innerText = fStates;
+      const extCount = (isIndexExt?1:0) + (isMiddleExt?1:0) + (isRingExt?1:0) + (isPinkyExt?1:0);
 
-      const mainFingersCount = (isIndexExt?1:0) + (isMiddleExt?1:0) + (isRingExt?1:0) + (isPinkyExt?1:0);
-
-      // 1. Joint 0: 🖐️ FULL OPEN PALM (At least 4 fingers extended OR all 5 out)
-      if (mainFingersCount >= 4) {
-        return 0;
-      }
-
-      // 2. Joint 5: ✊ CLOSED FIST (All 4 main fingers curled AND thumb curled)
-      if (mainFingersCount === 0 && !isThumbExt) {
-        return 5;
-      }
-
-      // 3. Joint 4: 👍 THUMB ONLY (Thumb extended, 4 fingers completely curled)
-      if (mainFingersCount === 0 && isThumbExt) {
-        return 4;
-      }
-
-      // 4. Joint 3: 🤟 3 FINGERS (Index, Middle, Ring UP, Pinky Curled)
-      if (isIndexExt && isMiddleExt && isRingExt && !isPinkyExt) {
-        return 3;
-      }
-
-      // 5. Joint 2: ✌️ 2 FINGERS (Index, Middle UP, Ring, Pinky Curled)
-      if (isIndexExt && isMiddleExt && !isRingExt && !isPinkyExt) {
-        return 2;
-      }
-
-      // 6. Joint 1: ☝️ 1 FINGER (Index UP ONLY)
-      if (isIndexExt && !isMiddleExt && !isRingExt && !isPinkyExt) {
-        return 1;
-      }
+      // 1. Joint 0: Open Palm (All 4 main fingers up)
+      if (extCount === 4) return 0;
+      // 2. Joint 4: Pinky Only
+      if (isPinkyExt && !isIndexExt && !isMiddleExt && !isRingExt) return 4;
+      // 3. Joint 5: Closed Fist (Zero fingers up)
+      if (extCount === 0) return 5;
+      // 4. Joint 3: 3 Fingers (Index + Middle + Ring)
+      if (isIndexExt && isMiddleExt && isRingExt && !isPinkyExt) return 3;
+      // 5. Joint 2: 2 Fingers (Index + Middle)
+      if (isIndexExt && isMiddleExt && !isRingExt && !isPinkyExt) return 2;
+      // 6. Joint 1: 1 Finger (Index Only)
+      if (isIndexExt && !isMiddleExt && !isRingExt && !isPinkyExt) return 1;
 
       return -1;
     }
 
     function onResults(results) {
+      canvasElement.width = videoElement.videoWidth || 350;
+      canvasElement.height = videoElement.videoHeight || 200;
+
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
@@ -873,15 +858,18 @@
         }
       }
 
-      // 4-Frame Rolling Debounce Filter (Zero flickering between gestures)
       if (detectedJoint !== -1) {
         if (detectedJoint === candidateJoint) {
           candidateCount++;
-          if (candidateCount >= 4 && activeJoint !== candidateJoint) {
+          if (candidateCount >= 3 && activeJoint !== candidateJoint) {
             activeJoint = candidateJoint;
             jointEngaged = false;
-            for (let i = 0; i <= 5; i++) document.getElementById('g' + i).classList.remove('active');
-            document.getElementById('g' + activeJoint).classList.add('active');
+            for (let i = 0; i <= 5; i++) {
+              const el = document.getElementById('g' + i);
+              if (el) el.classList.remove('active');
+            }
+            const activeEl = document.getElementById('g' + activeJoint);
+            if (activeEl) activeEl.classList.add('active');
           }
         } else {
           candidateJoint = detectedJoint;
@@ -892,12 +880,12 @@
       }
 
       const jointNames = {
-        0: "Base Yaw (Pin 0) [🖐️ Open Palm]", 
-        1: "Shoulder (Pin 1) [☝️ 1 Finger]", 
-        2: "Elbow (Pin 2) [✌️ 2 Fingers]", 
-        3: "Wrist Pitch (Pin 3) [🤟 3 Fingers]", 
-        4: "Wrist Roll (Pin 8) [👍 Thumb Only]", 
-        5: "Claw (Pin 9) [✊ Closed Fist]"
+        0: "J0: Base Yaw [🖐️ Palm]", 
+        1: "J1: Shoulder [☝️ 1 Finger]", 
+        2: "J2: Elbow [✌️ 2 Fingers]", 
+        3: "J3: Wrist.P [🤟 3 Fingers]", 
+        4: "J4: Wrist.R [🤙 Pinky Only]", 
+        5: "J5: Claw [✊ Closed Fist]"
       };
 
       if (activeJoint !== -1) {
@@ -906,21 +894,13 @@
         document.getElementById('tfActiveJoint').innerText = jointNames[activeJoint];
 
         const isVert = jointLimits[activeJoint].isVertical;
-        document.getElementById('consoleAxis').innerText = isVert ? "VERTICAL (UP / DOWN)" : "HORIZONTAL (LEFT / RIGHT)";
+        document.getElementById('consoleAxis').innerText = isVert ? "VERTICAL (UP/DOWN)" : "HORIZONTAL (LEFT/RIGHT)";
         document.getElementById('consoleAxis').style.color = isVert ? "var(--orange)" : "var(--accent)";
       } else {
-        document.getElementById('consoleLeft').innerText = "None (Show Left Gesture)";
+        document.getElementById('consoleLeft').innerText = "None (Show Left Hand)";
         document.getElementById('consoleLeft').className = "console-badge badge-locked";
         document.getElementById('consoleAxis').innerText = "--";
         document.getElementById('tfActiveJoint').innerText = "None";
-      }
-
-      if (rawHandX !== -1 && rawHandY !== -1) {
-        document.getElementById('consoleRight').innerText = `X:${(rawHandX*100).toFixed(0)}% | Y:${(rawHandY*100).toFixed(0)}%`;
-        document.getElementById('consoleRight').className = "console-badge badge-live";
-      } else {
-        document.getElementById('consoleRight').innerText = "Hidden";
-        document.getElementById('consoleRight').className = "console-badge badge-locked";
       }
 
       if (activeJoint !== -1 && rawHandX !== -1 && rawHandY !== -1) {
@@ -951,7 +931,7 @@
         }
 
         if (jointEngaged) {
-          document.getElementById('consoleEngage').innerText = "Streaming Cloud MQTT";
+          document.getElementById('consoleEngage').innerText = "Streaming MQTT";
           document.getElementById('consoleEngage').className = "console-badge badge-live";
 
           targetAngles[activeJoint] = calculatedAngle;
@@ -970,6 +950,13 @@
     }
 
     window.onload = () => {
+      // Auto-detect mobile screen width on first load
+      if (window.innerWidth < 768) {
+        setViewMode('mobile');
+      } else {
+        setViewMode('desktop');
+      }
+
       init3D();
       initMQTT();
       for (let i = 0; i <= 5; i++) updateDirectionalVisualizers(i, homeAngles[i]);
@@ -982,7 +969,7 @@
     const cameraFeed = new Camera(videoElement, {
       onFrame: async () => { await hands.send({ image: videoElement }); },
       width: 350,
-      height: 230
+      height: 200
     });
     cameraFeed.start();
   </script>
