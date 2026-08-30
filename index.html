@@ -268,6 +268,7 @@
     .pitch-item.active {
       border-color: var(--accent);
       background: #152238;
+      box-shadow: 0 0 8px var(--accent-glow);
     }
 
     input[type=range] {
@@ -342,11 +343,7 @@
       color: var(--text-muted);
     }
 
-    /* ======================================================== */
-    /* VIEW MODE LAYOUT DEFINITIONS (MOBILE VS DESKTOP)          */
-    /* ======================================================== */
-
-    /* MODE: MOBILE VIEW */
+    /* VIEW MODE LAYOUTS */
     body.mode-mobile .main-grid {
       display: flex;
       flex-direction: column;
@@ -358,7 +355,6 @@
     body.mode-mobile #canvas3d-container { height: 230px; }
     body.mode-mobile .pitch-grid { grid-template-columns: 1fr; }
 
-    /* MODE: DESKTOP VIEW */
     body.mode-desktop .main-grid {
       display: grid;
       grid-template-columns: 380px 1fr 480px;
@@ -380,7 +376,6 @@
     <h2><span>&#x1F916;</span> Robotic Arm Dual-Mode MQTT Controller</h2>
     
     <div class="header-controls">
-      <!-- 2-Option Viewport Switcher -->
       <div class="mode-switch-group">
         <button id="btnMobile" class="btn-mode" onclick="setViewMode('mobile')">📱 Mobile</button>
         <button id="btnDesktop" class="btn-mode active" onclick="setViewMode('desktop')">🖥️ Desktop</button>
@@ -412,16 +407,16 @@
           <span id="consoleLeft" class="console-badge badge-active">None</span>
         </div>
         <div class="console-row">
-          <span>FINGER VECTOR</span>
+          <span>FINGER DETECTION</span>
           <span id="consoleFingers" class="console-badge badge-active">[I:0, M:0, R:0, P:0]</span>
         </div>
         <div class="console-row">
-          <span>GESTURE AXIS</span>
+          <span>CONTROL AXIS</span>
           <span id="consoleAxis" class="console-badge badge-active">--</span>
         </div>
         <div class="console-row">
           <span>MOTION STREAM</span>
-          <span id="consoleEngage" class="console-badge badge-locked">Disengaged</span>
+          <span id="consoleEngage" class="console-badge badge-live">Live Active</span>
         </div>
         <div class="console-row">
           <span>TARGET ANGLE</span>
@@ -524,7 +519,7 @@
 
   <div class="ros-footer">
     <span>MQTT TOPIC: robotarm/mehta/cmd</span>
-    <span>Dual-Mode Switcher Active</span>
+    <span>Immediate Direct Response Active</span>
   </div>
 
   <script>
@@ -552,7 +547,6 @@
     let smoothedIndexX = 0.5;
     let smoothedIndexY = 0.5;
     let activeJoint = -1;
-    let jointEngaged = false;
 
     let candidateJoint = -1;
     let candidateCount = 0;
@@ -561,7 +555,6 @@
     let basePedestal, shoulderGroup, upperArm, elbowGroup, forearm, wristPitchGroup, wristRollGroup, gripperBase;
     let leftClawFinger, rightClawFinger;
 
-    // --- VIEW MODE CONTROLLER (MOBILE VS DESKTOP) ---
     function setViewMode(mode) {
       document.body.classList.remove('mode-mobile', 'mode-desktop');
       document.getElementById('btnMobile').classList.remove('active');
@@ -575,10 +568,9 @@
         document.getElementById('btnDesktop').classList.add('active');
       }
 
-      // Trigger 3D and Video canvas resize
       setTimeout(() => {
         onWindowResize();
-      }, 50);
+      }, 60);
     }
 
     function initMQTT() {
@@ -616,11 +608,14 @@
     }
 
     function updateDirectionalVisualizers(ch, val) {
-      document.getElementById('v' + ch).innerHTML = Math.round(val) + '&deg;';
+      const vElem = document.getElementById('v' + ch);
+      if (vElem) vElem.innerHTML = Math.round(val) + '&deg;';
       if (ch === 5) {
         const offset = (val / 100.0) * 28;
-        document.getElementById('clawFingerL').style.transform = `translateX(${-offset}px)`;
-        document.getElementById('clawFingerR').style.transform = `translateX(${offset}px)`;
+        const fL = document.getElementById('clawFingerL');
+        const fR = document.getElementById('clawFingerR');
+        if (fL) fL.style.transform = `translateX(${-offset}px)`;
+        if (fR) fR.style.transform = `translateX(${offset}px)`;
       }
     }
 
@@ -636,7 +631,8 @@
       }
       for (let i = 0; i <= 5; i++) {
         targetAngles[i] = homeAngles[i];
-        document.getElementById('s' + i).value = homeAngles[i];
+        const sElem = document.getElementById('s' + i);
+        if (sElem) sElem.value = homeAngles[i];
         updateDirectionalVisualizers(i, homeAngles[i]);
       }
     }
@@ -779,7 +775,8 @@
       const xEE = rEE * Math.cos(baseRad);
       const yEE = rEE * Math.sin(baseRad);
 
-      document.getElementById('tfXYZ').innerText = `${xEE.toFixed(0)}, ${yEE.toFixed(0)}, ${zEE.toFixed(0)}`;
+      const tfElem = document.getElementById('tfXYZ');
+      if (tfElem) tfElem.innerText = `${xEE.toFixed(0)}, ${yEE.toFixed(0)}, ${zEE.toFixed(0)}`;
       renderer.render(scene, camera);
     }
 
@@ -793,15 +790,14 @@
       return Math.sqrt(dx * dx + dy * dy);
     }
 
-    // 4-Finger Vector Landmark Classifier
     function analyzeLeftHandVector(landmarks) {
       const wrist = landmarks[0];
       const palmHeight = getDist(wrist, landmarks[9]) || 0.1;
 
-      const isIndexExt  = (getDist(landmarks[8], wrist) / palmHeight) > 1.30 && (landmarks[8].y < landmarks[6].y);
-      const isMiddleExt = (getDist(landmarks[12], wrist) / palmHeight) > 1.30 && (landmarks[12].y < landmarks[10].y);
-      const isRingExt   = (getDist(landmarks[16], wrist) / palmHeight) > 1.30 && (landmarks[16].y < landmarks[14].y);
-      const isPinkyExt  = (getDist(landmarks[20], wrist) / palmHeight) > 1.15 && (landmarks[20].y < landmarks[18].y);
+      const isIndexExt  = (getDist(landmarks[8], wrist) / palmHeight) > 1.25 && (landmarks[8].y < landmarks[6].y);
+      const isMiddleExt = (getDist(landmarks[12], wrist) / palmHeight) > 1.25 && (landmarks[12].y < landmarks[10].y);
+      const isRingExt   = (getDist(landmarks[16], wrist) / palmHeight) > 1.25 && (landmarks[16].y < landmarks[14].y);
+      const isPinkyExt  = (getDist(landmarks[20], wrist) / palmHeight) > 1.10 && (landmarks[20].y < landmarks[18].y);
 
       document.getElementById('consoleFingers').innerText = 
         `[I:${isIndexExt?1:0}, M:${isMiddleExt?1:0}, R:${isRingExt?1:0}, P:${isPinkyExt?1:0}]`;
@@ -836,34 +832,54 @@
       let rawHandX = -1;
       let rawHandY = -1;
 
-      if (results.multiHandLandmarks && results.multiHandedness) {
-        for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-          const landmarks = results.multiHandLandmarks[i];
-          const label = results.multiHandedness[i].label;
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        // Find which hand is on the right/left of the camera screen
+        let leftHandIndex = -1;
+        let rightHandIndex = -1;
 
-          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#38bdf8', lineWidth: 2});
-          drawLandmarks(canvasCtx, landmarks, {color: '#f97316', lineWidth: 1, radius: 2});
+        if (results.multiHandLandmarks.length === 1) {
+          // If only 1 hand is present, check whether it's giving a joint gesture
+          const j = analyzeLeftHandVector(results.multiHandLandmarks[0]);
+          if (j !== -1) {
+            detectedJoint = j;
+          } else {
+            // Treat as control slider hand
+            rawHandX = results.multiHandLandmarks[0][8].x;
+            rawHandY = results.multiHandLandmarks[0][8].y;
+          }
+        } else {
+          // When 2 hands are present, sort by camera X position
+          // Left Hand on camera = Selector (greater X in mirrored feed)
+          // Right Hand on camera = Slider Controller
+          for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+            const landmarks = results.multiHandLandmarks[i];
+            const label = results.multiHandedness[i] ? results.multiHandedness[i].label : '';
 
-          if (label === 'Right') {
-            detectedJoint = analyzeLeftHandVector(landmarks);
-          } else if (label === 'Left') {
-            rawHandX = landmarks[8].x;
-            rawHandY = landmarks[8].y;
-            const tip = landmarks[8];
-            canvasCtx.beginPath();
-            canvasCtx.arc(tip.x * canvasElement.width, tip.y * canvasElement.height, 8, 0, 2 * Math.PI);
-            canvasCtx.fillStyle = '#22c55e';
-            canvasCtx.fill();
+            drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#38bdf8', lineWidth: 2});
+            drawLandmarks(canvasCtx, landmarks, {color: '#f97316', lineWidth: 1, radius: 2});
+
+            if (label === 'Right' || landmarks[0].x > 0.5) {
+              const j = analyzeLeftHandVector(landmarks);
+              if (j !== -1) detectedJoint = j;
+            } else {
+              rawHandX = landmarks[8].x;
+              rawHandY = landmarks[8].y;
+              const tip = landmarks[8];
+              canvasCtx.beginPath();
+              canvasCtx.arc(tip.x * canvasElement.width, tip.y * canvasElement.height, 8, 0, 2 * Math.PI);
+              canvasCtx.fillStyle = '#22c55e';
+              canvasCtx.fill();
+            }
           }
         }
       }
 
+      // Robust 2-Frame Selection Debounce
       if (detectedJoint !== -1) {
         if (detectedJoint === candidateJoint) {
           candidateCount++;
-          if (candidateCount >= 3 && activeJoint !== candidateJoint) {
+          if (candidateCount >= 2 && activeJoint !== candidateJoint) {
             activeJoint = candidateJoint;
-            jointEngaged = false;
             for (let i = 0; i <= 5; i++) {
               const el = document.getElementById('g' + i);
               if (el) el.classList.remove('active');
@@ -892,20 +908,17 @@
         document.getElementById('consoleLeft').innerText = jointNames[activeJoint];
         document.getElementById('consoleLeft').className = "console-badge badge-active";
         document.getElementById('tfActiveJoint').innerText = jointNames[activeJoint];
+        document.getElementById('activeBadge').innerText = jointNames[activeJoint];
 
         const isVert = jointLimits[activeJoint].isVertical;
         document.getElementById('consoleAxis').innerText = isVert ? "VERTICAL (UP/DOWN)" : "HORIZONTAL (LEFT/RIGHT)";
         document.getElementById('consoleAxis').style.color = isVert ? "var(--orange)" : "var(--accent)";
-      } else {
-        document.getElementById('consoleLeft').innerText = "None (Show Left Hand)";
-        document.getElementById('consoleLeft').className = "console-badge badge-locked";
-        document.getElementById('consoleAxis').innerText = "--";
-        document.getElementById('tfActiveJoint').innerText = "None";
       }
 
+      // Direct Slicer Update (Without soft-lock block)
       if (activeJoint !== -1 && rawHandX !== -1 && rawHandY !== -1) {
-        smoothedIndexX = smoothedIndexX + 0.22 * (rawHandX - smoothedIndexX);
-        smoothedIndexY = smoothedIndexY + 0.22 * (rawHandY - smoothedIndexY);
+        smoothedIndexX = smoothedIndexX + 0.25 * (rawHandX - smoothedIndexX);
+        smoothedIndexY = smoothedIndexY + 0.25 * (rawHandY - smoothedIndexY);
 
         const config = jointLimits[activeJoint];
         let calculatedAngle = targetAngles[activeJoint];
@@ -923,34 +936,19 @@
         calculatedAngle = Math.max(config.min, Math.min(config.max, calculatedAngle));
         document.getElementById('consoleAngle').innerText = `${Math.round(calculatedAngle)}°`;
 
-        const engageThreshold = (activeJoint === 3) ? 28.0 : 20.0;
-        if (!jointEngaged) {
-          if (Math.abs(calculatedAngle - targetAngles[activeJoint]) < engageThreshold) {
-            jointEngaged = true;
-          }
-        }
+        // Update Target Position & Slider UI Immediately
+        targetAngles[activeJoint] = calculatedAngle;
+        const sElem = document.getElementById('s' + activeJoint);
+        if (sElem) sElem.value = Math.round(calculatedAngle);
+        updateDirectionalVisualizers(activeJoint, calculatedAngle);
 
-        if (jointEngaged) {
-          document.getElementById('consoleEngage').innerText = "Streaming MQTT";
-          document.getElementById('consoleEngage').className = "console-badge badge-live";
-
-          targetAngles[activeJoint] = calculatedAngle;
-          document.getElementById('s' + activeJoint).value = Math.round(calculatedAngle);
-          updateDirectionalVisualizers(activeJoint, calculatedAngle);
-          document.getElementById('activeBadge').innerText = `${jointNames[activeJoint]}: ${Math.round(calculatedAngle)}°`;
-
-          sendMQTT(activeJoint, calculatedAngle);
-        } else {
-          document.getElementById('consoleEngage').innerText = `Align near ${Math.round(targetAngles[activeJoint])}°`;
-          document.getElementById('consoleEngage').className = "console-badge badge-locked";
-        }
+        sendMQTT(activeJoint, calculatedAngle);
       }
 
       canvasCtx.restore();
     }
 
     window.onload = () => {
-      // Auto-detect mobile screen width on first load
       if (window.innerWidth < 768) {
         setViewMode('mobile');
       } else {
@@ -963,7 +961,7 @@
     };
 
     const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-    hands.setOptions({ maxNumHands: 2, modelComplexity: 0, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 0, minDetectionConfidence: 0.60, minTrackingConfidence: 0.60 });
     hands.onResults(onResults);
 
     const cameraFeed = new Camera(videoElement, {
