@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Vector-Based Robust Gesture & MQTT Robot Controller</title>
+  <!-- MediaPipe Hand Tracking -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <!-- Three.js 3D Engine & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- MQTT.js over WebSockets -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --card-bg: #151b26;
+      --panel-bg: #1c2331;
+      --border: #2d3748;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.35);
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --orange: #f97316;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    .top-header {
+      width: 100%;
+      max-width: 1760px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding: 10px 18px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-sizing: border-box;
+    }
+
+    .top-header h2 { margin: 0; color: var(--accent); font-size: 20px; display: flex; align-items: center; gap: 10px; }
+    .status-node { font-size: 13px; font-family: monospace; background: #0c2840; color: var(--accent); padding: 5px 12px; border-radius: 4px; border: 1px solid #1f4e78; }
+
+    .btn {
+      padding: 7px 14px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: #212d40;
+      color: #fff;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: #2d3c54; }
+    .btn-sync { background: var(--green); border-color: var(--green); color: #000; }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 380px 1fr 520px;
+      gap: 14px;
+      width: 100%;
+      max-width: 1760px;
+      height: 790px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: bold;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .video-container {
+      position: relative;
+      width: 100%;
+      height: 230px;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #000;
+      border: 1px solid var(--border);
+    }
+    video, #output_canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1);
+    }
+
+    .gesture-console {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .console-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 0;
+      border-bottom: 1px solid #2d3748;
+    }
+    .console-row:last-child { border-bottom: none; }
+    .console-badge {
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: bold;
+      font-size: 11px;
+    }
+    .badge-active { background: #0c2840; color: var(--accent); border: 1px solid #1f4e78; }
+    .badge-locked { background: #3d2805; color: var(--yellow); border: 1px solid #855302; }
+    .badge-live   { background: #0f3d1e; color: var(--green); border: 1px solid #1b7339; }
+
+    #canvas3d-container {
+      width: 100%;
+      height: 100%;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #07090e;
+      position: relative;
+      cursor: grab;
+    }
+    #canvas3d-container:active { cursor: grabbing; }
+
+    .tf-overlay {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(21, 27, 38, 0.94);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-family: monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .tf-val { color: var(--accent); font-weight: bold; }
+
+    .view-hint {
+      position: absolute;
+      bottom: 10px;
+      right: 12px;
+      background: rgba(11, 15, 23, 0.85);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      pointer-events: none;
+      font-family: monospace;
+    }
+
+    .directional-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .joint-section {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      transition: all 0.2s ease;
+    }
+    .joint-section.active {
+      border-color: var(--accent);
+      background: #14233a;
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: bold;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .vertical-pitch-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .pitch-card {
+      background: #121722;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      transition: border-color 0.2s;
+    }
+    .pitch-card.active {
+      border-color: var(--accent);
+      background: #152238;
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .slider-v-wrapper {
+      height: 140px;
+      width: 40px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+
+    input[type=range].vertical-slider {
+      -webkit-appearance: none;
+      width: 130px;
+      height: 6px;
+      background: #2d3748;
+      border-radius: 3px;
+      transform: rotate(-90deg);
+      outline: none;
+    }
+
+    input[type=range].horizontal-slider {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: #2d3748;
+      border-radius: 3px;
+      outline: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--accent);
+    }
+    .joint-section.active input[type=range]::-webkit-slider-thumb,
+    .pitch-card.active input[type=range]::-webkit-slider-thumb {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      transform: scale(1.15);
+    }
+
+    .rot-indicator-box {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      border: 2px dashed #38bdf8;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      background: #0b0f17;
+    }
+    .rot-pointer {
+      width: 2px;
+      height: 20px;
+      background: var(--orange);
+      position: absolute;
+      top: 3px;
+      transform-origin: bottom center;
+      transition: transform 0.05s linear;
+    }
+
+    .claw-sim-box {
+      width: 100%;
+      height: 28px;
+      background: #0b0f17;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 6px;
+    }
+    .claw-finger-l, .claw-finger-r {
+      width: 18px;
+      height: 18px;
+      background: var(--orange);
+      border-radius: 3px;
+      position: absolute;
+      transition: transform 0.05s linear;
+    }
+    .claw-finger-l { left: 40px; }
+    .claw-finger-r { right: 40px; }
+
+    .ros-footer {
+      width: 100%;
+      max-width: 1760px;
+      margin-top: 12px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-family: monospace;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top-header">
+    <h2><span>&#x1F916;</span> Remote Cloud MQTT Robot Controller</h2>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <span class="status-node" id="commBadge">MQTT: CONNECTING...</span>
+      <button class="btn btn-sync" onclick="initMQTT()">Reconnect Cloud</button>
+      <button class="btn" onclick="resetToHome()">Reset Home</button>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <!-- Camera + Gesture Tracker -->
+    <div class="card">
+      <div class="card-title">
+        <span>Vision Topic: /camera/hand_tracker</span>
+        <span id="aiState" style="color: var(--green);">Tracking Active</span>
+      </div>
+      <div class="video-container">
+        <video id="webcam" playsinline></video>
+        <canvas id="output_canvas" width="350" height="230"></canvas>
+      </div>
+
+      <div class="gesture-console">
+        <div class="console-row">
+          <span>SELECTED JOINT</span>
+          <span id="consoleLeft" class="console-badge badge-active">None</span>
+        </div>
+        <div class="console-row">
+          <span>FINGER VECTOR STATE</span>
+          <span id="consoleFingers" class="console-badge badge-active">[T, I, M, R, P]</span>
+        </div>
+        <div class="console-row">
+          <span>GESTURE AXIS</span>
+          <span id="consoleAxis" class="console-badge badge-active">--</span>
+        </div>
+        <div class="console-row">
+          <span>RIGHT HAND COORD</span>
+          <span id="consoleRight" class="console-badge badge-active">X: -- | Y: --</span>
+        </div>
+        <div class="console-row">
+          <span>MOTION STREAM</span>
+          <span id="consoleEngage" class="console-badge badge-locked">Disengaged</span>
+        </div>
+        <div class="console-row">
+          <span>COMMAND ANGLE</span>
+          <strong id="consoleAngle" style="color: var(--accent);">--&deg;</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3D Digital Twin Visualizer -->
+    <div class="card">
+      <div class="card-title">
+        <span>3D Kinematic Digital Twin</span>
+        <span>RViz2 Kinematic Mesh</span>
+      </div>
+      <div id="canvas3d-container">
+        <div class="tf-overlay">
+          <div style="color: #fff; margin-bottom: 4px; border-bottom: 1px solid var(--border); padding-bottom: 2px;"><strong>Forward Kinematics (FK)</strong></div>
+          <div>End-Effector (X, Y, Z): <span id="tfXYZ" class="tf-val">0, 0, 0</span> mm</div>
+          <div>Active Axis: <span id="tfActiveJoint" class="tf-val" style="color: var(--green);">None</span></div>
+          <div>Network Link: <span class="tf-val">MQTT WSS (EMQX Cloud)</span></div>
+        </div>
+        <div class="view-hint">&#x1F50D; Left-Click + Drag to Rotate | Scroll to Zoom</div>
+      </div>
+    </div>
+
+    <!-- Directionally Aligned Kinematic Slicer Panel -->
+    <div class="card">
+      <div class="card-title">
+        <span>Kinematic Direction Slicers</span>
+        <span id="activeBadge" style="color: var(--accent);">Wait Gesture</span>
+      </div>
+      
+      <div class="directional-container">
+
+        <!-- 1. BASE YAW (Open Palm 5-Finger Gesture) -->
+        <div id="g0" class="joint-section">
+          <div class="section-title">
+            <span>&#x21C4; Joint 0: Base Yaw (Pin 0) &mdash; 🖐️ Open Palm + Hand Left/Right</span>
+            <span id="v0" style="color: var(--accent); font-family: monospace;">90&deg;</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">
+            <span>Left ($0^\circ$)</span>
+            <span>Center ($90^\circ$)</span>
+            <span>Right ($180^\circ$)</span>
+          </div>
+          <input type="range" min="0" max="180" value="90" class="horizontal-slider" id="s0" oninput="manualSlider(0, this.value)">
+        </div>
+
+        <!-- 2. SAGITTAL ELEVATION & REACH (Vertical Sliders) -->
+        <div class="joint-section">
+          <div class="section-title">
+            <span>&#x21C5; Sagittal Elevation (Pitch Axes) &mdash; Hand Moves Up/Down</span>
+          </div>
+          
+          <div class="vertical-pitch-grid">
+            
+            <!-- Shoulder Pitch (Pin 1) -->
+            <div id="g1" class="pitch-card">
+              <span style="font-size: 11px; font-weight: bold;">J1: Shoulder (Pin 1)</span>
+              <span id="v1" style="color: var(--accent); font-family: monospace; font-size: 12px;">75&deg;</span>
+              <div class="slider-v-wrapper">
+                <input type="range" min="25" max="125" value="75" class="vertical-slider" id="s1" oninput="manualSlider(1, this.value)">
+              </div>
+              <span style="font-size: 9px; color: var(--text-muted);">&#x2191; Up / &#x2193; Down</span>
+            </div>
+
+            <!-- Elbow Pitch (Pin 2) -->
+            <div id="g2" class="pitch-card">
+              <span style="font-size: 11px; font-weight: bold;">J2: Elbow (Pin 2)</span>
+              <span id="v2" style="color: var(--accent); font-family: monospace; font-size: 12px;">140&deg;</span>
+              <div class="slider-v-wrapper">
+                <input type="range" min="30" max="170" value="140" class="vertical-slider" id="s2" oninput="manualSlider(2, this.value)">
+              </div>
+              <span style="font-size: 9px; color: var(--text-muted);">&#x2191; Up / &#x2193; Down</span>
+            </div>
+
+            <!-- Wrist Pitch (Pin 3) -->
+            <div id="g3" class="pitch-card">
+              <span style="font-size: 11px; font-weight: bold;">J3: Wrist.P (Pin 3)</span>
+              <span id="v3" style="color: var(--accent); font-family: monospace; font-size: 12px;">135&deg;</span>
+              <div class="slider-v-wrapper">
+                <input type="range" min="15" max="165" value="135" class="vertical-slider" id="s3" oninput="manualSlider(3, this.value)">
+              </div>
+              <span style="font-size: 9px; color: var(--text-muted);">&#x2191; Up / &#x2193; Down</span>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- 3. WRIST ROLL (Thumb Only Gesture) -->
+        <div id="g4" class="joint-section">
+          <div class="section-title">
+            <span>&#x21BB; Joint 4: Wrist Roll (Pin 8) &mdash; 👍 Thumb Only + Hand Left/Right</span>
+            <span id="v4" style="color: var(--accent); font-family: monospace;">90&deg;</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div class="rot-indicator-box">
+              <div id="rollPointer" class="rot-pointer" style="transform: rotate(0deg);"></div>
+            </div>
+            <div style="flex: 1;">
+              <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">
+                <span>CCW ($0^\circ$)</span>
+                <span>Neutral ($90^\circ$)</span>
+                <span>CW ($180^\circ$)</span>
+              </div>
+              <input type="range" min="0" max="180" class="horizontal-slider" id="s4" oninput="manualSlider(4, this.value)">
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. CLAW / GRIPPER (Closed Fist Gesture) -->
+        <div id="g5" class="joint-section">
+          <div class="section-title">
+            <span>&#x2964; Joint 5: Claw Gripper (Pin 9) &mdash; ✊ Closed Fist + Hand Left/Right</span>
+            <span id="v5" style="color: var(--accent); font-family: monospace;">30&deg;</span>
+          </div>
+          <div class="claw-sim-box">
+            <div id="clawFingerL" class="claw-finger-l"></div>
+            <div style="font-size: 10px; color: var(--text-muted); font-family: monospace; z-index: 2;">PINCH APERTURE</div>
+            <div id="clawFingerR" class="claw-finger-r"></div>
+          </div>
+          <input type="range" min="0" max="100" value="30" class="horizontal-slider" id="s5" oninput="manualSlider(5, this.value)">
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="ros-footer">
+    <span>MQTT TOPIC: robotarm/mehta/cmd</span>
+    <span id="rosMsg">Cloud Broker: broker.emqx.io (Port 8084 WSS)</span>
+    <span>ALGORITHM: Euclidean Radial Distance Vectorization</span>
+  </div>
+
+  <script>
+    const L1 = 145, L2 = 135, L3 = 90, CLAW_LEN = 55;
+
+    const jointLimits = {
+      0: { min: 0, max: 180, isVertical: false },  // Base Yaw: Open Palm (Horizontal X)
+      1: { min: 25, max: 125, isVertical: true },  // Shoulder: 1 Finger (Vertical Y)
+      2: { min: 30, max: 170, isVertical: true },  // Elbow: 2 Fingers (Vertical Y)
+      3: { min: 15, max: 165, isVertical: true },  // Wrist Pitch: 3 Fingers (Vertical Y)
+      4: { min: 0, max: 180, isVertical: false },  // Wrist Roll: Thumb Only (Horizontal X)
+      5: { min: 0, max: 100, isVertical: false }   // Claw: Closed Fist (Horizontal X)
+    };
+
+    let targetAngles  = [90.0, 75.0, 140.0, 135.0, 90.0, 30.0];
+    let displayAngles = [90.0, 75.0, 140.0, 135.0, 90.0, 30.0];
+    const homeAngles  = [90.0, 75.0, 140.0, 135.0, 90.0, 30.0];
+
+    // MQTT State
+    let mqttClient = null;
+    const MQTT_BROKER = "wss://broker.emqx.io:8084/mqtt";
+    const TOPIC_CMD   = "robotarm/mehta/cmd";
+    const TOPIC_HOME  = "robotarm/mehta/home";
+
+    let smoothedIndexX = 0.5;
+    let smoothedIndexY = 0.5;
+    let activeJoint = -1;
+    let jointEngaged = false;
+
+    // 4-Frame Debounce State
+    let candidateJoint = -1;
+    let candidateCount = 0;
+
+    let scene, camera, renderer, controls;
+    let basePedestal, shoulderGroup, upperArm, elbowGroup, forearm, wristPitchGroup, wristRollGroup, gripperBase;
+    let leftClawFinger, rightClawFinger;
+
+    function initMQTT() {
+      const clientId = "WebClient-" + Math.random().toString(16).substring(2, 8);
+      document.getElementById('commBadge').innerText = "MQTT: CONNECTING...";
+      document.getElementById('commBadge').style.color = "var(--yellow)";
+
+      mqttClient = mqtt.connect(MQTT_BROKER, {
+        clientId: clientId,
+        clean: true,
+        connectTimeout: 4000,
+        reconnectPeriod: 2000
+      });
+
+      mqttClient.on('connect', () => {
+        document.getElementById('commBadge').innerText = "MQTT: CLOUD LIVE";
+        document.getElementById('commBadge').style.color = "var(--green)";
+        document.getElementById('rosMsg').innerText = "Connected to EMQX Global Cloud Broker";
+      });
+
+      mqttClient.on('error', (err) => {
+        document.getElementById('commBadge').innerText = "MQTT: ERROR";
+        document.getElementById('commBadge').style.color = "var(--red)";
+      });
+
+      mqttClient.on('offline', () => {
+        document.getElementById('commBadge').innerText = "MQTT: OFFLINE";
+        document.getElementById('commBadge').style.color = "var(--red)";
+      });
+    }
+
+    function sendMQTT(ch, angle) {
+      if (!mqttClient || !mqttClient.connected) return;
+      const payload = new Uint8Array([0xFF, ch, Math.round(angle)]);
+      mqttClient.publish(TOPIC_CMD, payload, { qos: 0, retain: false });
+    }
+
+    function updateDirectionalVisualizers(ch, val) {
+      document.getElementById('v' + ch).innerHTML = Math.round(val) + '&deg;';
+      
+      if (ch === 4) {
+        const rollDeg = val - 90;
+        document.getElementById('rollPointer').style.transform = `rotate(${rollDeg}deg)`;
+      }
+
+      if (ch === 5) {
+        const offset = (val / 100.0) * 35;
+        document.getElementById('clawFingerL').style.transform = `translateX(${-offset}px)`;
+        document.getElementById('clawFingerR').style.transform = `translateX(${offset}px)`;
+      }
+    }
+
+    function manualSlider(ch, val) {
+      targetAngles[ch] = parseFloat(val);
+      updateDirectionalVisualizers(ch, val);
+      sendMQTT(ch, targetAngles[ch]);
+    }
+
+    function resetToHome() {
+      if (mqttClient && mqttClient.connected) {
+        mqttClient.publish(TOPIC_HOME, "HOME");
+      }
+      for (let i = 0; i <= 5; i++) {
+        targetAngles[i] = homeAngles[i];
+        document.getElementById('s' + i).value = homeAngles[i];
+        updateDirectionalVisualizers(i, homeAngles[i]);
+      }
+    }
+
+    function init3D() {
+      const container = document.getElementById('canvas3d-container');
+      scene = new THREE.Scene();
+
+      camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 1, 3000);
+      camera.position.set(420, 320, 520);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setClearColor(0x07090e, 1);
+      container.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.target.set(0, 140, 0);
+
+      const grid = new THREE.GridHelper(800, 32, 0x1f4e78, 0x151b26);
+      scene.add(grid);
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+      const light1 = new THREE.DirectionalLight(0x38bdf8, 1.2);
+      light1.position.set(200, 400, 200);
+      scene.add(light1);
+
+      const matBase   = new THREE.MeshStandardMaterial({ color: 0x151b26, roughness: 0.6 });
+      const matArm    = new THREE.MeshStandardMaterial({ color: 0x2d3748, roughness: 0.4 });
+      const matJoint  = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.2 });
+      const matClaw   = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.3 });
+
+      basePedestal = new THREE.Mesh(new THREE.CylinderGeometry(60, 75, 25, 32), matBase);
+      basePedestal.position.y = 12.5;
+      scene.add(basePedestal);
+
+      shoulderGroup = new THREE.Group();
+      shoulderGroup.position.y = 25;
+      basePedestal.add(shoulderGroup);
+
+      const turret = new THREE.Mesh(new THREE.CylinderGeometry(35, 35, 30, 24), matJoint);
+      turret.position.y = 15;
+      shoulderGroup.add(turret);
+
+      const shoulderPivot = new THREE.Group();
+      shoulderPivot.position.y = 30;
+      shoulderGroup.add(shoulderPivot);
+
+      upperArm = new THREE.Mesh(new THREE.BoxGeometry(26, L1, 26), matArm);
+      upperArm.position.y = L1 / 2;
+      shoulderPivot.add(upperArm);
+
+      elbowGroup = new THREE.Group();
+      elbowGroup.position.y = L1 / 2;
+      upperArm.add(elbowGroup);
+
+      const elbowJointMesh = new THREE.Mesh(new THREE.CylinderGeometry(18, 18, 30, 16), matJoint);
+      elbowJointMesh.rotation.z = Math.PI / 2;
+      elbowGroup.add(elbowJointMesh);
+
+      forearm = new THREE.Mesh(new THREE.BoxGeometry(22, L2, 22), matArm);
+      forearm.position.y = L2 / 2;
+      elbowGroup.add(forearm);
+
+      wristPitchGroup = new THREE.Group();
+      wristPitchGroup.position.y = L2 / 2;
+      forearm.add(wristPitchGroup);
+
+      const wristPitchMesh = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 26, 16), matJoint);
+      wristPitchMesh.rotation.z = Math.PI / 2;
+      wristPitchGroup.add(wristPitchMesh);
+
+      wristRollGroup = new THREE.Group();
+      wristPitchGroup.add(wristRollGroup);
+
+      const palmExtension = new THREE.Mesh(new THREE.BoxGeometry(18, L3, 18), matArm);
+      palmExtension.position.y = L3 / 2;
+      wristRollGroup.add(palmExtension);
+
+      gripperBase = new THREE.Mesh(new THREE.BoxGeometry(36, 12, 24), matJoint);
+      gripperBase.position.y = L3;
+      wristRollGroup.add(gripperBase);
+
+      leftClawFinger = new THREE.Mesh(new THREE.BoxGeometry(8, CLAW_LEN, 14), matClaw);
+      leftClawFinger.position.set(-12, CLAW_LEN / 2, 0);
+      gripperBase.add(leftClawFinger);
+
+      rightClawFinger = new THREE.Mesh(new THREE.BoxGeometry(8, CLAW_LEN, 14), matClaw);
+      rightClawFinger.position.set(12, CLAW_LEN / 2, 0);
+      gripperBase.add(rightClawFinger);
+
+      window.addEventListener('resize', onWindowResize);
+      animate3D();
+    }
+
+    function onWindowResize() {
+      const container = document.getElementById('canvas3d-container');
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    }
+
+    function animate3D() {
+      requestAnimationFrame(animate3D);
+      controls.update();
+
+      for (let i = 0; i < 6; i++) {
+        displayAngles[i] += (targetAngles[i] - displayAngles[i]) * 0.18;
+      }
+
+      const q0 = (displayAngles[0] - 90) * (Math.PI / 180);
+      const q1 = (90 - displayAngles[1]) * (Math.PI / 180);
+      const q2 = (180 - displayAngles[2]) * (Math.PI / 180);
+      const q3 = (180 - displayAngles[3]) * (Math.PI / 180);
+      const q4 = (displayAngles[4] - 90) * (Math.PI / 180);
+
+      basePedestal.rotation.y = -q0;
+      upperArm.parent.rotation.z = q1;
+      elbowGroup.rotation.z = -q2;
+      wristPitchGroup.rotation.z = -q3;
+      wristRollGroup.rotation.y = q4;
+
+      const clawOpening = Math.max(0, Math.min(100, displayAngles[5]));
+      const clawOffset = 5 + (clawOpening / 100.0) * 16;
+      leftClawFinger.position.x = -clawOffset;
+      rightClawFinger.position.x = clawOffset;
+
+      const theta1 = (90 - displayAngles[1]) * (Math.PI / 180);
+      const theta2 = theta1 - (displayAngles[2] - 90) * (Math.PI / 180);
+      const theta3 = theta2 - (displayAngles[3] - 90) * (Math.PI / 180);
+
+      const totalWristLen = L3 + CLAW_LEN;
+      const rEE = L1 * Math.sin(theta1) + L2 * Math.sin(theta2) + totalWristLen * Math.sin(theta3);
+      const zEE = 55 + L1 * Math.cos(theta1) + L2 * Math.cos(theta2) + totalWristLen * Math.cos(theta3);
+      const baseRad = (displayAngles[0] * Math.PI) / 180;
+      const xEE = rEE * Math.cos(baseRad);
+      const yEE = rEE * Math.sin(baseRad);
+
+      document.getElementById('tfXYZ').innerText = `${xEE.toFixed(0)}, ${yEE.toFixed(0)}, ${zEE.toFixed(0)}`;
+      renderer.render(scene, camera);
+    }
+
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    // Euclidean distance helper
+    function getDist(p1, p2) {
+      const dx = p1.x - p2.x;
+      const dy = p1.y - p2.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    // Mathematical Euclidean Vector Classifier
+    function analyzeLeftHandVector(landmarks) {
+      const wrist = landmarks[0];
+      const palmScale = getDist(wrist, landmarks[9]); // Wrist to Middle MCP scale baseline
+
+      // Distance from Wrist to Fingertips normalized by palm scale
+      const dThumb  = getDist(landmarks[4], wrist) / palmScale;
+      const dIndex  = getDist(landmarks[8], wrist) / palmScale;
+      const dMiddle = getDist(landmarks[12], wrist) / palmScale;
+      const dRing   = getDist(landmarks[16], wrist) / palmScale;
+      const dPinky  = getDist(landmarks[20], wrist) / palmScale;
+
+      // Unambiguous Euclidean thresholds (Extended > 1.35, Curled < 1.05)
+      const isThumbExt  = dThumb > 1.15 && (landmarks[4].x > landmarks[3].x + 0.02);
+      const isIndexExt  = dIndex > 1.35 && (landmarks[8].y < landmarks[6].y);
+      const isMiddleExt = dMiddle > 1.35 && (landmarks[12].y < landmarks[10].y);
+      const isRingExt   = dRing > 1.35 && (landmarks[16].y < landmarks[14].y);
+      const isPinkyExt  = dPinky > 1.25 && (landmarks[20].y < landmarks[18].y);
+
+      // Diagnostic state string
+      const fStates = `[T:${isThumbExt?1:0} I:${isIndexExt?1:0} M:${isMiddleExt?1:0} R:${isRingExt?1:0} P:${isPinkyExt?1:0}]`;
+      document.getElementById('consoleFingers').innerText = fStates;
+
+      const mainFingersCount = (isIndexExt?1:0) + (isMiddleExt?1:0) + (isRingExt?1:0) + (isPinkyExt?1:0);
+
+      // 1. Joint 0: 🖐️ FULL OPEN PALM (At least 4 fingers extended OR all 5 out)
+      if (mainFingersCount >= 4) {
+        return 0;
+      }
+
+      // 2. Joint 5: ✊ CLOSED FIST (All 4 main fingers curled AND thumb curled)
+      if (mainFingersCount === 0 && !isThumbExt) {
+        return 5;
+      }
+
+      // 3. Joint 4: 👍 THUMB ONLY (Thumb extended, 4 fingers completely curled)
+      if (mainFingersCount === 0 && isThumbExt) {
+        return 4;
+      }
+
+      // 4. Joint 3: 🤟 3 FINGERS (Index, Middle, Ring UP, Pinky Curled)
+      if (isIndexExt && isMiddleExt && isRingExt && !isPinkyExt) {
+        return 3;
+      }
+
+      // 5. Joint 2: ✌️ 2 FINGERS (Index, Middle UP, Ring, Pinky Curled)
+      if (isIndexExt && isMiddleExt && !isRingExt && !isPinkyExt) {
+        return 2;
+      }
+
+      // 6. Joint 1: ☝️ 1 FINGER (Index UP ONLY)
+      if (isIndexExt && !isMiddleExt && !isRingExt && !isPinkyExt) {
+        return 1;
+      }
+
+      return -1;
+    }
+
+    function onResults(results) {
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      let detectedJoint = -1;
+      let rawHandX = -1;
+      let rawHandY = -1;
+
+      if (results.multiHandLandmarks && results.multiHandedness) {
+        for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+          const landmarks = results.multiHandLandmarks[i];
+          const label = results.multiHandedness[i].label;
+
+          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#38bdf8', lineWidth: 2});
+          drawLandmarks(canvasCtx, landmarks, {color: '#f97316', lineWidth: 1, radius: 2});
+
+          if (label === 'Right') {
+            detectedJoint = analyzeLeftHandVector(landmarks);
+          } else if (label === 'Left') {
+            rawHandX = landmarks[8].x;
+            rawHandY = landmarks[8].y;
+            const tip = landmarks[8];
+            canvasCtx.beginPath();
+            canvasCtx.arc(tip.x * canvasElement.width, tip.y * canvasElement.height, 8, 0, 2 * Math.PI);
+            canvasCtx.fillStyle = '#22c55e';
+            canvasCtx.fill();
+          }
+        }
+      }
+
+      // 4-Frame Rolling Debounce Filter (Zero flickering between gestures)
+      if (detectedJoint !== -1) {
+        if (detectedJoint === candidateJoint) {
+          candidateCount++;
+          if (candidateCount >= 4 && activeJoint !== candidateJoint) {
+            activeJoint = candidateJoint;
+            jointEngaged = false;
+            for (let i = 0; i <= 5; i++) document.getElementById('g' + i).classList.remove('active');
+            document.getElementById('g' + activeJoint).classList.add('active');
+          }
+        } else {
+          candidateJoint = detectedJoint;
+          candidateCount = 1;
+        }
+      } else {
+        candidateCount = 0;
+      }
+
+      const jointNames = {
+        0: "Base Yaw (Pin 0) [🖐️ Open Palm]", 
+        1: "Shoulder (Pin 1) [☝️ 1 Finger]", 
+        2: "Elbow (Pin 2) [✌️ 2 Fingers]", 
+        3: "Wrist Pitch (Pin 3) [🤟 3 Fingers]", 
+        4: "Wrist Roll (Pin 8) [👍 Thumb Only]", 
+        5: "Claw (Pin 9) [✊ Closed Fist]"
+      };
+
+      if (activeJoint !== -1) {
+        document.getElementById('consoleLeft').innerText = jointNames[activeJoint];
+        document.getElementById('consoleLeft').className = "console-badge badge-active";
+        document.getElementById('tfActiveJoint').innerText = jointNames[activeJoint];
+
+        const isVert = jointLimits[activeJoint].isVertical;
+        document.getElementById('consoleAxis').innerText = isVert ? "VERTICAL (UP / DOWN)" : "HORIZONTAL (LEFT / RIGHT)";
+        document.getElementById('consoleAxis').style.color = isVert ? "var(--orange)" : "var(--accent)";
+      } else {
+        document.getElementById('consoleLeft').innerText = "None (Show Left Gesture)";
+        document.getElementById('consoleLeft').className = "console-badge badge-locked";
+        document.getElementById('consoleAxis').innerText = "--";
+        document.getElementById('tfActiveJoint').innerText = "None";
+      }
+
+      if (rawHandX !== -1 && rawHandY !== -1) {
+        document.getElementById('consoleRight').innerText = `X:${(rawHandX*100).toFixed(0)}% | Y:${(rawHandY*100).toFixed(0)}%`;
+        document.getElementById('consoleRight').className = "console-badge badge-live";
+      } else {
+        document.getElementById('consoleRight').innerText = "Hidden";
+        document.getElementById('consoleRight').className = "console-badge badge-locked";
+      }
+
+      if (activeJoint !== -1 && rawHandX !== -1 && rawHandY !== -1) {
+        smoothedIndexX = smoothedIndexX + 0.22 * (rawHandX - smoothedIndexX);
+        smoothedIndexY = smoothedIndexY + 0.22 * (rawHandY - smoothedIndexY);
+
+        const config = jointLimits[activeJoint];
+        let calculatedAngle = targetAngles[activeJoint];
+
+        if (config.isVertical) {
+          let normY = (0.80 - smoothedIndexY) / (0.80 - 0.20);
+          normY = Math.max(0, Math.min(1, normY));
+          calculatedAngle = config.min + normY * (config.max - config.min);
+        } else {
+          let normX = (0.75 - smoothedIndexX) / (0.75 - 0.25);
+          normX = Math.max(0, Math.min(1, normX));
+          calculatedAngle = config.min + normX * (config.max - config.min);
+        }
+
+        calculatedAngle = Math.max(config.min, Math.min(config.max, calculatedAngle));
+        document.getElementById('consoleAngle').innerText = `${Math.round(calculatedAngle)}°`;
+
+        const engageThreshold = (activeJoint === 3) ? 28.0 : 20.0;
+        if (!jointEngaged) {
+          if (Math.abs(calculatedAngle - targetAngles[activeJoint]) < engageThreshold) {
+            jointEngaged = true;
+          }
+        }
+
+        if (jointEngaged) {
+          document.getElementById('consoleEngage').innerText = "Streaming Cloud MQTT";
+          document.getElementById('consoleEngage').className = "console-badge badge-live";
+
+          targetAngles[activeJoint] = calculatedAngle;
+          document.getElementById('s' + activeJoint).value = Math.round(calculatedAngle);
+          updateDirectionalVisualizers(activeJoint, calculatedAngle);
+          document.getElementById('activeBadge').innerText = `${jointNames[activeJoint]}: ${Math.round(calculatedAngle)}°`;
+
+          sendMQTT(activeJoint, calculatedAngle);
+        } else {
+          document.getElementById('consoleEngage').innerText = `Align near ${Math.round(targetAngles[activeJoint])}°`;
+          document.getElementById('consoleEngage').className = "console-badge badge-locked";
+        }
+      }
+
+      canvasCtx.restore();
+    }
+
+    window.onload = () => {
+      init3D();
+      initMQTT();
+      for (let i = 0; i <= 5; i++) updateDirectionalVisualizers(i, homeAngles[i]);
+    };
+
+    const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 0, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
+    hands.onResults(onResults);
+
+    const cameraFeed = new Camera(videoElement, {
+      onFrame: async () => { await hands.send({ image: videoElement }); },
+      width: 350,
+      height: 230
+    });
+    cameraFeed.start();
+  </script>
+</body>
+</html>
