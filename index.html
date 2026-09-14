@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Dual-Mode Remote MQTT Robotic Arm Dashboard</title>
+  <title>High-Sensitivity Voice & Vision Robotic Arm Dashboard</title>
   
   <!-- MediaPipe Hand Tracking -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -80,7 +80,6 @@
       flex-wrap: wrap;
     }
 
-    /* Mode Switcher Buttons */
     .mode-switch-group {
       display: flex;
       background: #0b0f17;
@@ -129,6 +128,28 @@
     }
     .btn:active { background: #2d3c54; transform: scale(0.97); }
     .btn-sync { background: var(--green); border-color: var(--green); color: #000; }
+    
+    .btn-voice {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: #1c2331;
+      border-color: var(--accent);
+      color: var(--accent);
+      transition: all 0.2s ease;
+    }
+    .btn-voice.listening {
+      background: #3b1115;
+      border-color: var(--red);
+      color: var(--red);
+      animation: pulseMic 1.5s infinite;
+    }
+
+    @keyframes pulseMic {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
 
     .card {
       background: var(--card-bg);
@@ -198,7 +219,6 @@
       font-size: 10px;
     }
     .badge-active { background: #0c2840; color: var(--accent); border: 1px solid #1f4e78; }
-    .badge-locked { background: #3d2805; color: var(--yellow); border: 1px solid #855302; }
     .badge-live   { background: #0f3d1e; color: var(--green); border: 1px solid #1b7339; }
 
     #canvas3d-container {
@@ -343,7 +363,6 @@
       color: var(--text-muted);
     }
 
-    /* VIEW MODE LAYOUTS */
     body.mode-mobile .main-grid {
       display: flex;
       flex-direction: column;
@@ -373,13 +392,17 @@
 <body class="mode-desktop">
 
   <div class="top-header">
-    <h2><span>&#x1F916;</span> Robotic Arm Dual-Mode MQTT Controller</h2>
+    <h2><span>&#x1F916;</span> Robotic Arm Voice & Gesture Controller</h2>
     
     <div class="header-controls">
       <div class="mode-switch-group">
         <button id="btnMobile" class="btn-mode" onclick="setViewMode('mobile')">📱 Mobile</button>
         <button id="btnDesktop" class="btn-mode active" onclick="setViewMode('desktop')">🖥️ Desktop</button>
       </div>
+
+      <button id="btnVoiceToggle" class="btn btn-voice" onclick="toggleVoiceControl()">
+        <span id="voiceMicIcon">🎤</span> <span id="voiceBtnText">Voice Off</span>
+      </button>
 
       <span class="status-node" id="commBadge">MQTT: CONNECTING...</span>
       <button class="btn btn-sync" onclick="initMQTT()">Reconnect</button>
@@ -392,7 +415,7 @@
     <!-- 1. Vision & Gesture Tracker -->
     <div class="card" id="cardVision">
       <div class="card-title">
-        <span>Vision Topic: /camera/hand_tracker</span>
+        <span>Vision & Voice Feed</span>
         <span id="aiState" style="color: var(--green);">Tracking</span>
       </div>
       
@@ -407,16 +430,20 @@
           <span id="consoleLeft" class="console-badge badge-active">None</span>
         </div>
         <div class="console-row">
+          <span>VOICE SENSITIVITY</span>
+          <span id="consoleVoiceStatus" class="console-badge badge-active">Disabled</span>
+        </div>
+        <div class="console-row">
+          <span>LIVE TRANSCRIPT</span>
+          <span id="consoleVoiceCmd" class="console-badge" style="color: var(--yellow); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">--</span>
+        </div>
+        <div class="console-row">
           <span>FINGER DETECTION</span>
           <span id="consoleFingers" class="console-badge badge-active">[I:0, M:0, R:0, P:0]</span>
         </div>
         <div class="console-row">
           <span>CONTROL AXIS</span>
           <span id="consoleAxis" class="console-badge badge-active">--</span>
-        </div>
-        <div class="console-row">
-          <span>MOTION STREAM</span>
-          <span id="consoleEngage" class="console-badge badge-live">Live Active</span>
         </div>
         <div class="console-row">
           <span>TARGET ANGLE</span>
@@ -435,7 +462,8 @@
         <div class="tf-overlay">
           <div>End-Effector: <span id="tfXYZ" class="tf-val">0, 0, 0</span> mm</div>
           <div>Active Joint: <span id="tfActiveJoint" class="tf-val" style="color: var(--green);">None</span></div>
-          <div>Network Link: <span class="tf-val">MQTT WSS (EMQX Cloud)</span></div>
+          <div>Voice Status: <span id="tfVoiceInfo" class="tf-val" style="color: var(--yellow);">Muted</span></div>
+          <div>Network Link: <span class="tf-val">MQTT WSS (EMQX)</span></div>
         </div>
       </div>
     </div>
@@ -444,14 +472,14 @@
     <div class="card" id="cardSliders">
       <div class="card-title">
         <span>Kinematic Sliders</span>
-        <span id="activeBadge" style="color: var(--accent);">Wait Gesture</span>
+        <span id="activeBadge" style="color: var(--accent);">Wait Input</span>
       </div>
 
       <div class="directional-container">
         <!-- Base Yaw -->
         <div id="g0" class="joint-section">
           <div class="section-title">
-            <span>&#x21C4; J0: Base Yaw (Pin 0) &mdash; 🖐️ Open Palm</span>
+            <span>&#x21C4; J0: Base Yaw (Pin 0) &mdash; 🖐️ "Base"</span>
             <span id="v0" style="color: var(--accent); font-family: monospace;">90&deg;</span>
           </div>
           <input type="range" min="0" max="180" value="90" id="s0" oninput="manualSlider(0, this.value)">
@@ -460,13 +488,13 @@
         <!-- Sagittal Pitch Joints -->
         <div class="joint-section">
           <div class="section-title">
-            <span>&#x21C5; Sagittal Elevation (Pitch Axes) &mdash; Vertical Gesture</span>
+            <span>&#x21C5; Sagittal Elevation &mdash; ☝️✌️🤟 Pitch Axes</span>
           </div>
           
           <div class="pitch-grid">
             <div id="g1" class="pitch-item">
               <div class="section-title">
-                <span>J1: Shoulder (Pin 1) &mdash; ☝️ 1 Finger</span>
+                <span>J1: Shoulder &mdash; ☝️</span>
                 <span id="v1" style="color: var(--accent); font-family: monospace;">75&deg;</span>
               </div>
               <input type="range" min="25" max="125" value="75" id="s1" oninput="manualSlider(1, this.value)">
@@ -474,7 +502,7 @@
 
             <div id="g2" class="pitch-item">
               <div class="section-title">
-                <span>J2: Elbow (Pin 2) &mdash; ✌️ 2 Fingers</span>
+                <span>J2: Elbow &mdash; ✌️</span>
                 <span id="v2" style="color: var(--accent); font-family: monospace;">140&deg;</span>
               </div>
               <input type="range" min="30" max="170" value="140" id="s2" oninput="manualSlider(2, this.value)">
@@ -482,7 +510,7 @@
 
             <div id="g3" class="pitch-item">
               <div class="section-title">
-                <span>J3: Wrist.P (Pin 3) &mdash; 🤟 3 Fingers</span>
+                <span>J3: Wrist.P &mdash; 🤟</span>
                 <span id="v3" style="color: var(--accent); font-family: monospace;">135&deg;</span>
               </div>
               <input type="range" min="15" max="165" value="135" id="s3" oninput="manualSlider(3, this.value)">
@@ -493,7 +521,7 @@
         <!-- Wrist Roll -->
         <div id="g4" class="joint-section">
           <div class="section-title">
-            <span>&#x21BB; J4: Wrist Roll (Pin 8) &mdash; 🤙 Pinky ONLY</span>
+            <span>&#x21BB; J4: Wrist Roll (Pin 8) &mdash; 🤙 "Wrist Roll"</span>
             <span id="v4" style="color: var(--accent); font-family: monospace;">90&deg;</span>
           </div>
           <input type="range" min="0" max="180" value="90" id="s4" oninput="manualSlider(4, this.value)">
@@ -502,7 +530,7 @@
         <!-- Claw Gripper -->
         <div id="g5" class="joint-section">
           <div class="section-title">
-            <span>&#x2964; J5: Claw Gripper (Pin 9) &mdash; ✊ Closed Fist</span>
+            <span>&#x2964; J5: Claw Gripper (Pin 9) &mdash; ✊ "Claw / Gripper"</span>
             <span id="v5" style="color: var(--accent); font-family: monospace;">30&deg;</span>
           </div>
           <div class="claw-sim-box">
@@ -519,26 +547,31 @@
 
   <div class="ros-footer">
     <span>MQTT TOPIC: robotarm/mehta/cmd</span>
-    <span>Immediate Direct Response Active</span>
+    <span>Ultra-Responsive Mic Active (Speaks words/digits directly)</span>
   </div>
 
   <script>
     const L1 = 145, L2 = 135, L3 = 90, CLAW_LEN = 55;
 
     const jointLimits = {
-      0: { min: 0, max: 180, isVertical: false },  // Base Yaw: Open Palm (Horizontal X)
-      1: { min: 25, max: 125, isVertical: true },  // Shoulder: 1 Finger (Vertical Y)
-      2: { min: 30, max: 170, isVertical: true },  // Elbow: 2 Fingers (Vertical Y)
-      3: { min: 15, max: 165, isVertical: true },  // Wrist Pitch: 3 Fingers (Vertical Y)
-      4: { min: 0, max: 180, isVertical: false },  // Wrist Roll: Pinky Only (Horizontal X)
-      5: { min: 0, max: 100, isVertical: false }   // Claw: Closed Fist (Horizontal X)
+      0: { min: 0, max: 180, isVertical: false, name: "J0: Base Yaw" },
+      1: { min: 25, max: 125, isVertical: true, name: "J1: Shoulder" },
+      2: { min: 30, max: 170, isVertical: true, name: "J2: Elbow" },
+      3: { min: 15, max: 165, isVertical: true, name: "J3: Wrist Pitch" },
+      4: { min: 0, max: 180, isVertical: false, name: "J4: Wrist Roll" },
+      5: { min: 0, max: 100, isVertical: false, name: "J5: Claw Gripper" }
     };
+
+    const hardwareChannels = [0, 1, 2, 3, 8, 9];
 
     let targetAngles  = [90.0, 75.0, 140.0, 135.0, 90.0, 30.0];
     let displayAngles = [90.0, 75.0, 140.0, 135.0, 90.0, 30.0];
     const homeAngles  = [90.0, 75.0, 140.0, 135.0, 90.0, 30.0];
 
-    // MQTT State
+    // Priority Lock: Hand tracking yields when voice command triggers
+    let lastVoiceCommandTime = 0;
+    const VOICE_OVERRIDE_DURATION = 2500;
+
     let mqttClient = null;
     const MQTT_BROKER = "wss://broker.emqx.io:8084/mqtt";
     const TOPIC_CMD   = "robotarm/mehta/cmd";
@@ -546,7 +579,7 @@
 
     let smoothedIndexX = 0.5;
     let smoothedIndexY = 0.5;
-    let activeJoint = -1;
+    let activeJoint = 0;
 
     let candidateJoint = -1;
     let candidateCount = 0;
@@ -554,6 +587,301 @@
     let scene, camera, renderer, controls;
     let basePedestal, shoulderGroup, upperArm, elbowGroup, forearm, wristPitchGroup, wristRollGroup, gripperBase;
     let leftClawFinger, rightClawFinger;
+
+    // --- Ultra-Sensitive Speech Recognition Engine ---
+    let recognition = null;
+    let isVoiceListening = false;
+    let lastExecutedCommand = "";
+    let lastExecutedTime = 0;
+
+    // Broad phonetic lookup dictionary to catch conversational acoustic misinterpretations
+    const wordToNum = {
+      "zero": 0, "oh": 0,
+      "one": 1, "won": 1,
+      "two": 2, "to": 2, "too": 2,
+      "three": 3, "tree": 3,
+      "four": 4, "for": 4, "fore": 4,
+      "five": 5,
+      "six": 6, "sex": 6,
+      "seven": 7,
+      "eight": 8, "ate": 8,
+      "nine": 9,
+      "ten": 10,
+      "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+      "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+      "twenty": 20, "twenty five": 25,
+      "thirty": 30, "thirty five": 35,
+      "forty": 40, "forty five": 45,
+      "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+      "one hundred": 100, "hundred": 100,
+      "one hundred twenty": 120, "one hundred thirty": 130,
+      "one hundred forty": 140, "one hundred fifty": 150,
+      "one hundred sixty": 160, "one hundred seventy": 170,
+      "one hundred eighty": 180
+    };
+
+    function initVoiceControl() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        document.getElementById('consoleVoiceStatus').innerText = "Not Supported";
+        document.getElementById('consoleVoiceStatus').style.color = "var(--red)";
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true; // Enables instant response on partial speech
+      recognition.maxAlternatives = 3;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        isVoiceListening = true;
+        updateVoiceUI();
+      };
+
+      recognition.onend = () => {
+        // Automatically restart speech service instantly if still toggled ON
+        if (isVoiceListening) {
+          try { recognition.start(); } catch(e) {}
+        } else {
+          updateVoiceUI();
+        }
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error !== 'no-speech') {
+          console.warn('Speech Engine Warning:', event.error);
+        }
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          interimTranscript += event.results[i][0].transcript;
+        }
+
+        const cleanTranscript = interimTranscript.trim();
+        if (cleanTranscript.length > 0) {
+          document.getElementById('consoleVoiceCmd').innerText = `"${cleanTranscript}"`;
+          processVoiceCommand(cleanTranscript);
+        }
+      };
+    }
+
+    function toggleVoiceControl() {
+      if (!recognition) initVoiceControl();
+      if (!recognition) return;
+
+      if (isVoiceListening) {
+        isVoiceListening = false;
+        recognition.stop();
+      } else {
+        isVoiceListening = true;
+        try { recognition.start(); } catch(e) {}
+      }
+      updateVoiceUI();
+    }
+
+    function updateVoiceUI() {
+      const btn = document.getElementById('btnVoiceToggle');
+      const text = document.getElementById('voiceBtnText');
+      const mic = document.getElementById('voiceMicIcon');
+      const status = document.getElementById('consoleVoiceStatus');
+      const tfVoice = document.getElementById('tfVoiceInfo');
+
+      if (isVoiceListening) {
+        btn.classList.add('listening');
+        text.innerText = "High-Sens Active";
+        mic.innerText = "🔴";
+        status.innerText = "High-Sens (Live)";
+        status.className = "console-badge badge-live";
+        if (tfVoice) {
+          tfVoice.innerText = "Online (Live Stream)";
+          tfVoice.style.color = "var(--green)";
+        }
+      } else {
+        btn.classList.remove('listening');
+        text.innerText = "Voice Off";
+        mic.innerText = "🎤";
+        status.innerText = "Disabled";
+        status.className = "console-badge badge-active";
+        if (tfVoice) {
+          tfVoice.innerText = "Muted";
+          tfVoice.style.color = "var(--yellow)";
+        }
+      }
+    }
+
+    // --- Fast-Path Voice Command Parsing ---
+    function processVoiceCommand(rawCmd) {
+      let cmd = rawCmd.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, " ").replace(/\s+/g, " ").trim();
+
+      // Debounce identical commands repeated inside interim stream
+      const now = Date.now();
+      if (cmd === lastExecutedCommand && (now - lastExecutedTime) < 1000) {
+        return;
+      }
+
+      // 1. Instant System Reset & Reconnect
+      if (cmd.includes("home") || cmd.includes("reset")) {
+        triggerCommandSuccess(cmd);
+        resetToHome();
+        return;
+      }
+      if (cmd.includes("reconnect") || cmd.includes("connect")) {
+        triggerCommandSuccess(cmd);
+        initMQTT();
+        return;
+      }
+
+      // 2. Fast Claw Aperture Actuation
+      if (cmd.includes("open claw") || cmd.includes("open gripper") || cmd.includes("release") || cmd.includes("open hand")) {
+        triggerCommandSuccess(cmd);
+        setActiveJoint(5);
+        applyAngle(5, 100);
+        return;
+      }
+      if (cmd.includes("close claw") || cmd.includes("close gripper") || cmd.includes("grab") || cmd.includes("close hand")) {
+        triggerCommandSuccess(cmd);
+        setActiveJoint(5);
+        applyAngle(5, 0);
+        return;
+      }
+
+      // 3. Acoustic/Fuzzy Joint Aliases
+      const jointMap = [
+        { regex: /\b(base|yaw|bottom|bace|bay|joint 0|joint zero|j0)\b/i, id: 0 },
+        { regex: /\b(shoulder|arm|sholder|joint 1|joint one|j1)\b/i, id: 1 },
+        { regex: /\b(elbow|elbo|joint 2|joint two|j2)\b/i, id: 2 },
+        { regex: /\b(wrist pitch|pitch|elevation|wrist up|wrist down|joint 3|joint three|j3)\b/i, id: 3 },
+        { regex: /\b(wrist roll|roll|wrist|rotate wrist|spin|joint 4|joint four|j4)\b/i, id: 4 },
+        { regex: /\b(claw|gripper|grip|hand|finger|pinch|joint 5|joint five|j5)\b/i, id: 5 }
+      ];
+
+      let detectedJoint = -1;
+      for (const item of jointMap) {
+        if (item.regex.test(cmd)) {
+          detectedJoint = item.id;
+          break;
+        }
+      }
+
+      if (detectedJoint !== -1) {
+        setActiveJoint(detectedJoint);
+      }
+
+      const targetCh = (detectedJoint !== -1) ? detectedJoint : activeJoint;
+
+      // 4. Extract Degree Target (Numeric or Spoken Words)
+      let targetDegree = null;
+
+      // Direct Digits
+      const numMatch = cmd.match(/\b([0-9]{1,3})\b/);
+      if (numMatch) {
+        targetDegree = parseFloat(numMatch[1]);
+      } else {
+        // Check spoken number words
+        for (const [word, val] of Object.entries(wordToNum)) {
+          if (new RegExp(`\\b${word}\\b`, 'i').test(cmd)) {
+            targetDegree = val;
+            break;
+          }
+        }
+      }
+
+      // 5. Fire Actuation
+      if (targetDegree !== null) {
+        triggerCommandSuccess(cmd);
+        applyAngle(targetCh, targetDegree);
+      } else if (detectedJoint !== -1 && (cmd.includes("select") || cmd.includes("choose") || cmd.includes("switch") || cmd.split(" ").length === 1)) {
+        triggerCommandSuccess(cmd);
+      }
+    }
+
+    function triggerCommandSuccess(cmd) {
+      lastVoiceCommandTime = Date.now();
+      lastExecutedCommand = cmd;
+      lastExecutedTime = Date.now();
+    }
+
+    function setActiveJoint(idx) {
+      activeJoint = idx;
+      for (let i = 0; i <= 5; i++) {
+        const el = document.getElementById('g' + i);
+        if (el) el.classList.remove('active');
+      }
+      const activeEl = document.getElementById('g' + activeJoint);
+      if (activeEl) activeEl.classList.add('active');
+
+      const name = jointLimits[activeJoint].name;
+      document.getElementById('consoleLeft').innerText = name;
+      document.getElementById('tfActiveJoint').innerText = name;
+      document.getElementById('activeBadge').innerText = name;
+      
+      const isVert = jointLimits[activeJoint].isVertical;
+      document.getElementById('consoleAxis').innerText = isVert ? "VERTICAL (UP/DOWN)" : "HORIZONTAL (LEFT/RIGHT)";
+      document.getElementById('consoleAxis').style.color = isVert ? "var(--orange)" : "var(--accent)";
+      document.getElementById('consoleAngle').innerText = `${Math.round(targetAngles[activeJoint])}°`;
+    }
+
+    function applyAngle(ch, angle) {
+      const config = jointLimits[ch];
+      const clamped = Math.max(config.min, Math.min(config.max, angle));
+      targetAngles[ch] = clamped;
+
+      const sElem = document.getElementById('s' + ch);
+      if (sElem) {
+        sElem.value = clamped;
+        sElem.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+
+      document.getElementById('consoleAngle').innerText = `${Math.round(clamped)}°`;
+      updateDirectionalVisualizers(ch, clamped);
+      sendMQTT(ch, clamped);
+    }
+
+    function updateDirectionalVisualizers(ch, val) {
+      const vElem = document.getElementById('v' + ch);
+      if (vElem) vElem.innerHTML = Math.round(val) + '&deg;';
+      if (ch === 5) {
+        const offset = (val / 100.0) * 28;
+        const fL = document.getElementById('clawFingerL');
+        const fR = document.getElementById('clawFingerR');
+        if (fL) fL.style.transform = `translateX(${-offset}px)`;
+        if (fR) fR.style.transform = `translateX(${offset}px)`;
+      }
+    }
+
+    function manualSlider(ch, val) {
+      setActiveJoint(ch);
+      targetAngles[ch] = parseFloat(val);
+      updateDirectionalVisualizers(ch, val);
+      sendMQTT(ch, targetAngles[ch]);
+      document.getElementById('consoleAngle').innerText = `${Math.round(val)}°`;
+    }
+
+    function sendMQTT(ch, angle) {
+      if (!mqttClient || !mqttClient.connected) return;
+      const pin = hardwareChannels[ch] !== undefined ? hardwareChannels[ch] : ch;
+      const payload = new Uint8Array([0xFF, pin, Math.round(angle)]);
+      mqttClient.publish(TOPIC_CMD, payload, { qos: 0, retain: false });
+    }
+
+    function resetToHome() {
+      if (mqttClient && mqttClient.connected) {
+        mqttClient.publish(TOPIC_HOME, "HOME");
+      }
+      for (let i = 0; i <= 5; i++) {
+        targetAngles[i] = homeAngles[i];
+        const sElem = document.getElementById('s' + i);
+        if (sElem) {
+          sElem.value = homeAngles[i];
+          sElem.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        updateDirectionalVisualizers(i, homeAngles[i]);
+      }
+      document.getElementById('consoleAngle').innerText = `${Math.round(targetAngles[activeJoint])}°`;
+    }
 
     function setViewMode(mode) {
       document.body.classList.remove('mode-mobile', 'mode-desktop');
@@ -567,10 +895,7 @@
         document.body.classList.add('mode-desktop');
         document.getElementById('btnDesktop').classList.add('active');
       }
-
-      setTimeout(() => {
-        onWindowResize();
-      }, 60);
+      setTimeout(() => { onWindowResize(); }, 60);
     }
 
     function initMQTT() {
@@ -601,42 +926,7 @@
       });
     }
 
-    function sendMQTT(ch, angle) {
-      if (!mqttClient || !mqttClient.connected) return;
-      const payload = new Uint8Array([0xFF, ch, Math.round(angle)]);
-      mqttClient.publish(TOPIC_CMD, payload, { qos: 0, retain: false });
-    }
-
-    function updateDirectionalVisualizers(ch, val) {
-      const vElem = document.getElementById('v' + ch);
-      if (vElem) vElem.innerHTML = Math.round(val) + '&deg;';
-      if (ch === 5) {
-        const offset = (val / 100.0) * 28;
-        const fL = document.getElementById('clawFingerL');
-        const fR = document.getElementById('clawFingerR');
-        if (fL) fL.style.transform = `translateX(${-offset}px)`;
-        if (fR) fR.style.transform = `translateX(${offset}px)`;
-      }
-    }
-
-    function manualSlider(ch, val) {
-      targetAngles[ch] = parseFloat(val);
-      updateDirectionalVisualizers(ch, val);
-      sendMQTT(ch, targetAngles[ch]);
-    }
-
-    function resetToHome() {
-      if (mqttClient && mqttClient.connected) {
-        mqttClient.publish(TOPIC_HOME, "HOME");
-      }
-      for (let i = 0; i <= 5; i++) {
-        targetAngles[i] = homeAngles[i];
-        const sElem = document.getElementById('s' + i);
-        if (sElem) sElem.value = homeAngles[i];
-        updateDirectionalVisualizers(i, homeAngles[i]);
-      }
-    }
-
+    // --- 3D Digital Twin Engine ---
     function init3D() {
       const container = document.getElementById('canvas3d-container');
       scene = new THREE.Scene();
@@ -780,6 +1070,7 @@
       renderer.render(scene, camera);
     }
 
+    // --- MediaPipe Hand Tracking ---
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
@@ -804,17 +1095,11 @@
 
       const extCount = (isIndexExt?1:0) + (isMiddleExt?1:0) + (isRingExt?1:0) + (isPinkyExt?1:0);
 
-      // 1. Joint 0: Open Palm (All 4 main fingers up)
       if (extCount === 4) return 0;
-      // 2. Joint 4: Pinky Only
       if (isPinkyExt && !isIndexExt && !isMiddleExt && !isRingExt) return 4;
-      // 3. Joint 5: Closed Fist (Zero fingers up)
       if (extCount === 0) return 5;
-      // 4. Joint 3: 3 Fingers (Index + Middle + Ring)
       if (isIndexExt && isMiddleExt && isRingExt && !isPinkyExt) return 3;
-      // 5. Joint 2: 2 Fingers (Index + Middle)
       if (isIndexExt && isMiddleExt && !isRingExt && !isPinkyExt) return 2;
-      // 6. Joint 1: 1 Finger (Index Only)
       if (isIndexExt && !isMiddleExt && !isRingExt && !isPinkyExt) return 1;
 
       return -1;
@@ -833,24 +1118,15 @@
       let rawHandY = -1;
 
       if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        // Find which hand is on the right/left of the camera screen
-        let leftHandIndex = -1;
-        let rightHandIndex = -1;
-
         if (results.multiHandLandmarks.length === 1) {
-          // If only 1 hand is present, check whether it's giving a joint gesture
           const j = analyzeLeftHandVector(results.multiHandLandmarks[0]);
           if (j !== -1) {
             detectedJoint = j;
           } else {
-            // Treat as control slider hand
             rawHandX = results.multiHandLandmarks[0][8].x;
             rawHandY = results.multiHandLandmarks[0][8].y;
           }
         } else {
-          // When 2 hands are present, sort by camera X position
-          // Left Hand on camera = Selector (greater X in mirrored feed)
-          // Right Hand on camera = Slider Controller
           for (let i = 0; i < results.multiHandLandmarks.length; i++) {
             const landmarks = results.multiHandLandmarks[i];
             const label = results.multiHandedness[i] ? results.multiHandedness[i].label : '';
@@ -874,18 +1150,17 @@
         }
       }
 
-      // Robust 2-Frame Selection Debounce
+      // Lock vision angle overwrites when voice actions execute
+      if (Date.now() - lastVoiceCommandTime < VOICE_OVERRIDE_DURATION) {
+        canvasCtx.restore();
+        return;
+      }
+
       if (detectedJoint !== -1) {
         if (detectedJoint === candidateJoint) {
           candidateCount++;
           if (candidateCount >= 2 && activeJoint !== candidateJoint) {
-            activeJoint = candidateJoint;
-            for (let i = 0; i <= 5; i++) {
-              const el = document.getElementById('g' + i);
-              if (el) el.classList.remove('active');
-            }
-            const activeEl = document.getElementById('g' + activeJoint);
-            if (activeEl) activeEl.classList.add('active');
+            setActiveJoint(candidateJoint);
           }
         } else {
           candidateJoint = detectedJoint;
@@ -895,27 +1170,6 @@
         candidateCount = 0;
       }
 
-      const jointNames = {
-        0: "J0: Base Yaw [🖐️ Palm]", 
-        1: "J1: Shoulder [☝️ 1 Finger]", 
-        2: "J2: Elbow [✌️ 2 Fingers]", 
-        3: "J3: Wrist.P [🤟 3 Fingers]", 
-        4: "J4: Wrist.R [🤙 Pinky Only]", 
-        5: "J5: Claw [✊ Closed Fist]"
-      };
-
-      if (activeJoint !== -1) {
-        document.getElementById('consoleLeft').innerText = jointNames[activeJoint];
-        document.getElementById('consoleLeft').className = "console-badge badge-active";
-        document.getElementById('tfActiveJoint').innerText = jointNames[activeJoint];
-        document.getElementById('activeBadge').innerText = jointNames[activeJoint];
-
-        const isVert = jointLimits[activeJoint].isVertical;
-        document.getElementById('consoleAxis').innerText = isVert ? "VERTICAL (UP/DOWN)" : "HORIZONTAL (LEFT/RIGHT)";
-        document.getElementById('consoleAxis').style.color = isVert ? "var(--orange)" : "var(--accent)";
-      }
-
-      // Direct Slicer Update (Without soft-lock block)
       if (activeJoint !== -1 && rawHandX !== -1 && rawHandY !== -1) {
         smoothedIndexX = smoothedIndexX + 0.25 * (rawHandX - smoothedIndexX);
         smoothedIndexY = smoothedIndexY + 0.25 * (rawHandY - smoothedIndexY);
@@ -933,16 +1187,7 @@
           calculatedAngle = config.min + normX * (config.max - config.min);
         }
 
-        calculatedAngle = Math.max(config.min, Math.min(config.max, calculatedAngle));
-        document.getElementById('consoleAngle').innerText = `${Math.round(calculatedAngle)}°`;
-
-        // Update Target Position & Slider UI Immediately
-        targetAngles[activeJoint] = calculatedAngle;
-        const sElem = document.getElementById('s' + activeJoint);
-        if (sElem) sElem.value = Math.round(calculatedAngle);
-        updateDirectionalVisualizers(activeJoint, calculatedAngle);
-
-        sendMQTT(activeJoint, calculatedAngle);
+        applyAngle(activeJoint, calculatedAngle);
       }
 
       canvasCtx.restore();
@@ -957,6 +1202,8 @@
 
       init3D();
       initMQTT();
+      initVoiceControl();
+      setActiveJoint(0);
       for (let i = 0; i <= 5; i++) updateDirectionalVisualizers(i, homeAngles[i]);
     };
 
